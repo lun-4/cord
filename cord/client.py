@@ -13,8 +13,8 @@ log = logging.getLogger('cord.client')
 
 
 class Client:
-    def __init__(self, *, token):
-        self.http = HTTP(token=token)
+    def __init__(self, *, token, **kwargs):
+        self.http = HTTP(token=token, **kwargs)
         self.loop = asyncio.get_event_loop()
         self.ws = None
         self.seq = None
