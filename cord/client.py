@@ -80,8 +80,9 @@ class Client:
             log.debug('Websocket receive: %s', j)
 
             # update seq
-            log.debug('Seq: %s -> %s', self.seq or '<none>', j['s'] or '<none>')
-            self.seq = j['s']
+            if 's' in j:
+                log.debug('Seq: %s -> %s', self.seq or '<none>', j['s'] or '<none>')
+                self.seq = j['s']
 
             if j['op'] == OP.HELLO:
                 hb_interval = j['d']['heartbeat_interval']
