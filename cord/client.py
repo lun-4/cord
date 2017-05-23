@@ -1,40 +1,15 @@
+import aiohttp
 import asyncio
 import websockets
-import logging
-import aiohttp
-import os
+
 import json
+import logging
+import os
 
-logging.basicConfig(level=logging.DEBUG, format='[%(levelname)s] %(name)s - %(message)s')
-for no_debug in ('websockets', 'asyncio'):
-    logging.getLogger(no_debug).setLevel(logging.INFO)
-log = logging.getLogger('cord')
+from .http import HTTP
+from .op import OP
 
-
-class OP:
-    DISPATCH = 0
-    HEARTBEAT = 1
-    IDENTIFY = 2
-    RESUME = 6
-    INVALID_SESSION = 9
-    HELLO = 10
-    HEARTBEAT_ACK = 11
-
-
-class HTTP:
-    def __init__(self, *, token):
-        self.token = token
-        self.endpoint_root = 'https://discordapp.com/api'
-        self.session = None
-
-    def route(self, path: str = '') -> str:
-        """Returns an API endpoint."""
-        return self.endpoint_root + path
-
-    async def gateway_url(self, *, version=7, encoding='json') -> str:
-        """Returns the gateway URL used for connecting to the gateway."""
-        async with self.session.get(self.route('/gateway')) as resp:
-            return (await resp.json())['url'] + '?v=%d&encoding=%s' % (version, encoding)
+log = logging.getLogger('cord.client')
 
 
 class Client:
