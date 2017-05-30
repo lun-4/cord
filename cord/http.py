@@ -12,4 +12,3 @@ class HTTP:
         """Returns the gateway URL used for connecting to the gateway."""
         async with self.session.get(self.route('/gateway')) as resp:
             return (await resp.json())['url'] + '?v=%d&encoding=%s' % (version, encoding)
-
