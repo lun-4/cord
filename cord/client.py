@@ -13,6 +13,28 @@ log = logging.getLogger('cord.client')
 
 
 class Client:
+    """Client object for cord.
+
+    Attributes
+    ----------
+    http: :py:meth:`HTTP`
+        HTTP client.
+    loop: `event loop`
+        asyncio event loop.
+    ws: `websocket client`
+        websocket connection.
+    seq: int
+        Sequence number, changed when Discord says it.
+    events: dict
+        Custom events to event handlers.
+    _events: dict
+        Gateway events to ``asyncio.Event`` objects.
+    _heartbeat_task: ``asyncio.Task``
+        Heartbeat task.
+    custom_ws_logic: bool
+        Flag if this client is running custom websocket logic and
+        it won't use the deafults provided here.
+    """
     def __init__(self, *, token, **kwargs):
         self.http = HTTP(token=token, **kwargs)
         self.loop = asyncio.get_event_loop()
@@ -33,6 +55,13 @@ class Client:
         self.custom_ws_logic = False
 
     def on(self, event):
+        """Register a event handler.
+
+        Parameters
+        ----------
+        event: str
+            Event name.
+        """
         def inner(func):
             if not asyncio.iscoroutinefunction(func):
                 raise RuntimeError(
@@ -43,10 +72,23 @@ class Client:
         return inner
 
     async def _send_raw(self, d):
-        """Sends encoded JSON data over the websocket."""
+        """Sends encoded JSON data over the websocket.
+
+        Parameters
+        ----------
+        d: any
+            Any object.
+        """
         await self.ws.send(json.dumps(d))
 
     async def _heartbeat(self, interval):
+        """Heartbeat with Discord.
+
+        Parameters
+        ----------
+        interval: int
+            Heartbeat interval in miliseconds.
+        """
         log.debug('Starting to heartbeat at an interval of %d ms.', interval)
         while True:
             log.debug('Heartbeat! seq = %s', self.seq or '<none>')
@@ -54,6 +96,7 @@ class Client:
             await asyncio.sleep(interval / 1000)
 
     async def identify(self):
+        """Send an ``IDENTIFY`` packet."""
         log.info('Identifying with the gateway...')
         await self._send_raw({
             'op': OP.IDENTIFY,
@@ -73,6 +116,10 @@ class Client:
         })
 
     async def recv_payload(self):
+        """Receive a payload from the gateway.
+
+        Dispatches ``WS_RECEIVE`` to respective handlers.
+        """
         try:
             cnt = await self.ws.recv()
         except websockets.exceptions.ConnectionClosed:
@@ -88,7 +135,12 @@ class Client:
         return j
 
     async def default_receiver(self):
-        # default websocket logic
+        """Default websocket logic.
+
+        If a client has no handlers for ``WEBSOCKET_CONNECT``, this function manages
+        `OP 10 Hello` and `OP 0 Dispatch` packets, if not, this is just an infinite loop
+        with calls to :py:meth:`Client.recv_payload`.
+        """
         while True:
             j = await self.recv_payload()
 
@@ -104,6 +156,13 @@ class Client:
                     await self.event_dispatcher(j)
 
     async def process_hello(self, j):
+        """Process an `OP 10 Hello` packet and start a heartbeat task.
+
+        Parameters
+        ----------
+        j: dict
+            The `OP 10 Hello` packet.
+        """
         hb_interval = j['d']['heartbeat_interval']
         log.debug('Got OP hello. Heartbeat interval = %d ms.', hb_interval)
         log.debug('Creating heartbeat task.')
@@ -113,6 +172,16 @@ class Client:
             await self.identify()
 
     async def wait_event(self, evt_name):
+        """Wait for a dispatched event from the gateway.
+
+        If using custom WS logic, start :py:meth:`Client.default_receiver`
+        so it correctly manages events.
+
+        Parameters
+        ----------
+        evt_name: str
+            Event to wait.
+        """
         evt_name = evt_name.upper()
 
         if evt_name not in self._events:
@@ -121,6 +190,13 @@ class Client:
         await self._events[evt_name].wait()
 
     async def event_dispatcher(self, payload):
+        """Dispatch an event.
+
+        Parameters
+        ----------
+        payload: dict
+            Payload.
+        """
         log.debug('[e_dispatcher] RECV PAYLOAD')
         if payload['op'] != OP.DISPATCH:
             log.debug("[e_dispatcher] Not DISPATCH, ignoring")
