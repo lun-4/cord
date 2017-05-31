@@ -44,6 +44,7 @@ class Client:
         # actual events
         self.events = {
             'WS_RECEIVE': [self.event_dispatcher],
+            'READY': [self.process_ready],
         }
 
         # websocket event objects, asyncio.Event
@@ -171,6 +172,16 @@ class Client:
         if not self.custom_ws_logic:
             await self.identify()
 
+    async def process_ready(self, payload):
+        """Process a `READY` event from the gateway."""
+
+        data = payload['d']
+
+        self.raw_user = data['user']
+        self.session_id = data['session_id']
+
+        log.debug(f'Connected to {",".join(data["_trace"])}')
+
     async def wait_event(self, evt_name):
         """Wait for a dispatched event from the gateway.
 
@@ -202,14 +213,16 @@ class Client:
             log.debug("[e_dispatcher] Not DISPATCH, ignoring")
             return
 
+        evt_name = payload['t']
+
         try:
-            self._events[payload['t']].set()
+            self._events[evt_name].set()
         except KeyError:
             pass
 
-        callbacks = self.events.get(payload['t'], [])
+        callbacks = self.events.get(evt_name, [])
         for callback in callbacks:
-            await callback()
+            await callback(payload)
 
     async def _run(self, gw_version=7):
         # create http clientsession

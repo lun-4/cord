@@ -10,7 +10,7 @@ client = cord.client.Client(token='litecord_RLoWjnc45pDX2shufGjijfyPbh2kV0sYGz2E
                             api_root='http://0.0.0.0:8000/api')
 
 @client.on('READY')
-async def on_ready():
+async def on_ready(payload):
     print("Received READY event")
 
 @client.on('websocket_connect')
@@ -18,9 +18,9 @@ async def on_ws_connect():
     """Control how the websocket works.
 
     This event is fired when the websocket connects with a Discord-compatible gateway server.
-    If there isn't any handler for this event, ``goodshit`` will do its default.
+    If there isn't any handler for this event, ``cord`` will do its default.
 
-    With this event you can customize how the websocket actually connects with the gateway.
+    With this event you can customize how you transmit data to the gateway.
     """
 
     hello_packet = await client.recv_payload()
@@ -39,7 +39,7 @@ async def on_ws_connect():
     await client.wait_event('READY')
 
     # ratelimit 101
-    for i in range(0, 150):
-        await client._send_raw({'op': OP.HEARTBEAT, 'd': 'get rekt'})
+    #for i in range(0, 150):
+        #await client._send_raw({'op': OP.HEARTBEAT, 'd': 'get rekt'})
 
 client.run(gw_version=6)
