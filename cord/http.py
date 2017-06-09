@@ -11,4 +11,15 @@ class HTTP:
     async def gateway_url(self, *, version=7, encoding='json') -> str:
         """Returns the gateway URL used for connecting to the gateway."""
         async with self.session.get(self.route('/gateway')) as resp:
-            return (await resp.json())['url'] + '?v=%d&encoding=%s' % (version, encoding)
+            return (await resp.json())['url'] + f'?v={version}&encoding={encoding}'
+
+    async def get(self, path):
+        """Makes a GET request.
+ 
+        Returns
+        -------
+        dict:
+            JSON data returned from the request.
+        """
+        async with self.session.get(self.route(path)) as resp:
+            return await resp.json()
