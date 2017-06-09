@@ -8,6 +8,7 @@ import os
 
 from .http import HTTP
 from .op import OP
+from .objects import Guild
 
 log = logging.getLogger('cord.client')
 
@@ -17,7 +18,7 @@ class Client:
 
     Attributes
     ----------
-    http: :py:meth:`HTTP`
+    http: :class:`HTTP`
         HTTP client.
     loop: `event loop`
         asyncio event loop.
@@ -45,6 +46,10 @@ class Client:
         self.events = {
             'WS_RECEIVE': [self.event_dispatcher],
             'READY': [self.process_ready],
+
+            'GUILD_CREATE': [self.guild_create],
+            #'GUILD_UPDATE': [self.guild_update],
+            #'GUILD_DELETE': [self.guild_delete],
         }
 
         # websocket event objects, asyncio.Event
@@ -54,6 +59,10 @@ class Client:
 
         # if this client is running under custom WS logic
         self.custom_ws_logic = False
+
+        # Client's internal cache, Client.process_ready fills them
+        self.guilds = []
+        self.user = None
 
     def on(self, event):
         """Register a event handler.
@@ -71,6 +80,21 @@ class Client:
             self.events[event.upper()] = self.events.get(event.upper(), []) + [func]
             return None
         return inner
+
+    def get(self, lst, **kwargs):
+        """Get an object from a list that matches the search criteria in ``**kwargs``.
+        
+        Parameters
+        ----------
+        lst: list
+            List to be searched.
+        """
+
+        for element in lst:
+            for attr, val in kwargs.items():
+                res = getattr(element, attr)
+                if res == val:
+                    return element
 
     async def _send_raw(self, d):
         """Sends encoded JSON data over the websocket.
@@ -172,15 +196,48 @@ class Client:
         if not self.custom_ws_logic:
             await self.identify()
 
+    def add_guild(self, guild):
+        """Adds a guild to the internal cache, if it already exists, it gets updated.
+
+        Parameters
+        ----------
+        guild: :class:`Guild`
+            Guild object to be added
+        """
+        old_guild = self.get(self.guilds, id=guild.id)
+
+        if old_guild is not None:
+            old_guild.update(guild._raw)
+            return
+
+        self.guilds.append(guild)
+
     async def process_ready(self, payload):
-        """Process a `READY` event from the gateway."""
+        """Process a `READY` event from the gateway.
+
+        Fills in internal cache.
+        """
 
         data = payload['d']
 
         self.raw_user = data['user']
         self.session_id = data['session_id']
 
+        self.user = ClientUser(data['user'])
+ 
+        for raw_guild in data['guilds']:
+            self.add_guild(Guild(raw_guild))
+
         log.debug(f'Connected to {",".join(data["_trace"])}')
+
+    async def guild_create(self, payload):
+        """GUILD_CREATE event handler.
+
+        Fills in the internal guild cache, overwrites
+        existing guilds in cache if needed.
+        """
+
+        self.add_guild(Guild(payload))
 
     async def wait_event(self, evt_name):
         """Wait for a dispatched event from the gateway.
