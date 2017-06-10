@@ -8,7 +8,7 @@ import os
 
 from .http import HTTP
 from .op import OP
-from .objects import Guild, ClientUser
+from .objects import Guild, Channel, ClientUser
 
 log = logging.getLogger('cord.client')
 
@@ -62,6 +62,7 @@ class Client:
 
         # Client's internal cache, Client.process_ready fills them
         self.guilds = []
+        self.channels = []
         self.user = None
 
     def on(self, event):
@@ -83,7 +84,7 @@ class Client:
 
     def get(self, lst, **kwargs):
         """Get an object from a list that matches the search criteria in ``**kwargs``.
-        
+
         Parameters
         ----------
         lst: list
@@ -95,6 +96,23 @@ class Client:
                 res = getattr(element, attr)
                 if res == val:
                     return element
+
+        return None
+
+    def delete(self, lst, **kwargs):
+        """Delete an element from a list that matches the search criteria in ``**kwargs``
+
+        Parameters
+        ----------
+        lst: list
+            List to be searched.
+        """
+
+        for (idx, element) in enumerate(lst):
+            for attr, val in kwargs.items():
+                res = getattr(element, attr)
+                if res == val:
+                    del lst[idx]
 
     async def _send_raw(self, d):
         """Sends encoded JSON data over the websocket.
@@ -213,7 +231,7 @@ class Client:
         self.guilds.append(guild)
 
     def update_guild(self, raw_guild):
-        """Updates a guild in internal cache, if it already exists, doesn't do anything.
+        """Updates a guild in internal cache, if it doesn't exist, doesn't do anything.
 
         Parameters
         ----------
@@ -227,6 +245,53 @@ class Client:
 
         guild.update(raw_guild)
 
+    def get_guild(self, guild_id: int):
+        """Get a Guild from its ID."""
+        return self.get(self.guild, id=guild_id)
+
+    def delete_guild(self, guild_id: int):
+        """Delete a guild from internal cache from its ID."""
+        self.delete(self.guilds, id=guild_id)
+
+    def add_channel(self, channel):
+        """Adds a channel to the internal cache, if it already exists, it gets updated.
+
+        Parameters
+        ----------
+        channel: :class:`Channel`
+            Channel object to be added.
+        """
+        old_channel = self.get(self.channels, id=channel.id)
+
+        if old_channel is not None:
+            old_channel.update(channel._raw)
+            return
+
+        self.channels.append(channel)
+
+    def update_channel(self, raw_channel):
+        """Updates a channel in internal cache, if it doesn't exist, doesn't do anything.
+
+        Parameters
+        ----------
+        raw_channel: dict
+            Raw guild object.
+        """
+
+        channel = self.get(self.channels, id=int(raw_channel['id']))
+        if channel is None:
+            return
+
+        channel.update(raw_channel)
+
+    def get_channel(self, channel_id: int):
+        """Get a channel by its ID."""
+        return self.get(self.channels, id=channel_id)
+
+    def delete_channel(self, channel_id: int):
+        """Delete a channel from internal cache from its ID."""
+        self.delete(self.channels, id=channel_id)
+
     async def process_ready(self, payload):
         """Process a `READY` event from the gateway.
 
@@ -238,17 +303,20 @@ class Client:
         self.raw_user = data['user']
         self.session_id = data['session_id']
 
-        self.user = ClientUser(data['user'])
- 
-        for raw_guild in data['guilds']:
-            guild = Guild(raw_guild)
-            self.add_guild(guild)
+        self.user = ClientUser(self, data['user'])
 
-            for channel in guild.channels:
-                self.add_channel(channel)
+        for raw_guild in data['guilds']:
+            for raw_channel in raw_guild['channels']:
+                self.add_channel(Channel(self, raw_channel))
+
+            guild = Guild(self, raw_guild)
+            self.add_guild(guild)
 
         log.debug(f'Connected to {",".join(data["_trace"])}')
         log.info(f'Logged in! {self.user!r}')
+
+        log.debug(self.channels)
+        log.debug(self.guilds)
 
     async def guild_create(self, payload):
         """GUILD_CREATE event handler.
