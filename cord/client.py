@@ -36,9 +36,9 @@ class Client:
         Flag if this client is running custom websocket logic and
         it won't use the deafults provided here.
     """
-    def __init__(self, *, token, **kwargs):
-        self.http = HTTP(token=token, **kwargs)
-        self.loop = asyncio.get_event_loop()
+    def __init__(self, **kwargs):
+        self.http = HTTP(**kwargs)
+        self.loop = kwargs.get('loop') or asyncio.get_event_loop()
         self.ws = None
         self.seq = None
 
@@ -212,6 +212,21 @@ class Client:
 
         self.guilds.append(guild)
 
+    def update_guild(self, raw_guild):
+        """Updates a guild in internal cache, if it already exists, doesn't do anything.
+
+        Parameters
+        ----------
+        raw_gulid: dict
+            Raw guild object.
+        """
+
+        guild = self.get(self.guilds, id=int(raw_guild['id']))
+        if guild is None:
+            return
+
+        guild.update(raw_guild)
+
     async def process_ready(self, payload):
         """Process a `READY` event from the gateway.
 
@@ -226,7 +241,11 @@ class Client:
         self.user = ClientUser(data['user'])
  
         for raw_guild in data['guilds']:
-            self.add_guild(Guild(raw_guild))
+            guild = Guild(raw_guild)
+            self.add_guild(guild)
+
+            for channel in guild.channels:
+                self.add_channel(channel)
 
         log.debug(f'Connected to {",".join(data["_trace"])}')
         log.info(f'Logged in! {self.user!r}')
@@ -239,6 +258,20 @@ class Client:
         """
 
         self.add_guild(Guild(payload))
+
+    async def guild_update(self, payload):
+        """GUILD_UPDATE event handler.
+
+        Updates a guild.
+        """
+        self.update_guild(payload)
+
+    async def guild_delete(self, payload):
+        """GUILD_DELETE event handler.
+
+        Deletes a guild from cache.
+        """
+        self.delete_guild(int(payload['id']))
 
     async def wait_event(self, evt_name):
         """Wait for a dispatched event from the gateway.

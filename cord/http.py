@@ -1,7 +1,11 @@
+import json
+
 class HTTP:
-    def __init__(self, *, token, api_root = 'https://discordapp.com/api'):
-        self.token = token
-        self.api_root = api_root
+    def __init__(self, **kwargs):
+        self.api_root = kwargs.get('api_root') or 'https://discordapp.com/api'
+        self.token = kwargs.get('token')
+        self.email = kwargs.get('email')
+        self.password = kwargs.get('password')
         self.session = None
 
     def route(self, path: str = '') -> str:
@@ -10,8 +14,20 @@ class HTTP:
 
     async def gateway_url(self, *, version=7, encoding='json') -> str:
         """Returns the gateway URL used for connecting to the gateway."""
+        if self.token is None:
+            await self.login()
+
         async with self.session.get(self.route('/gateway')) as resp:
             return (await resp.json())['url'] + f'?v={version}&encoding={encoding}'
+
+    async def login(self):
+        _payload = {
+            'email': self.email,
+            'password': self.password,
+        }
+        async with self.session.post(self.route('/auth/login'), data=json.dumps(_payload)) as resp:
+            j = await resp.json()
+            self.token = j['token']
 
     async def get(self, path):
         """Makes a GET request.
