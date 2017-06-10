@@ -8,7 +8,7 @@ import os
 
 from .http import HTTP
 from .op import OP
-from .objects import Guild
+from .objects import Guild, ClientUser
 
 log = logging.getLogger('cord.client')
 
@@ -229,6 +229,7 @@ class Client:
             self.add_guild(Guild(raw_guild))
 
         log.debug(f'Connected to {",".join(data["_trace"])}')
+        log.info(f'Logged in! {self.user!r}')
 
     async def guild_create(self, payload):
         """GUILD_CREATE event handler.
