@@ -48,14 +48,15 @@ class Client:
             'READY': [self.process_ready],
 
             'GUILD_CREATE': [self.guild_create],
-            #'GUILD_UPDATE': [self.guild_update],
-            #'GUILD_DELETE': [self.guild_delete],
+            'GUILD_UPDATE': [self.guild_update],
+            'GUILD_DELETE': [self.guild_delete],
         }
 
         # websocket event objects, asyncio.Event
         self._events = {}
 
         self._heartbeat_task = None
+        self._ack = False
 
         # if this client is running under custom WS logic
         self.custom_ws_logic = False
@@ -135,8 +136,24 @@ class Client:
         log.debug('Starting to heartbeat at an interval of %d ms.', interval)
         while True:
             log.debug('Heartbeat! seq = %s', self.seq or '<none>')
+            print(self._ack)
             await self._send_raw({'op': OP.HEARTBEAT, 'd': self.seq})
+
+            # Intentional 300ms, gives us time to wait for an ACK.
+            await asyncio.sleep(0.3)
+
+            print(self._ack)
+
+            if not self._ack:
+                log.warning('We didn\'t get a response from the gateway.')
+
+            self._ack = False
             await asyncio.sleep(interval / 1000)
+
+    async def _heartbeat_ack(self):
+        """Acknowledges a heartbeat."""
+        log.debug("Acknowledged heartbeat!")
+        self._ack = True
 
     async def identify(self):
         """Send an ``IDENTIFY`` packet."""
@@ -169,7 +186,6 @@ class Client:
             return
 
         j = json.loads(cnt)
-        log.debug('Websocket receive: %s', j)
 
         handlers = self.events.get('WS_RECEIVE', [])
         for func in handlers:
@@ -189,13 +205,16 @@ class Client:
 
             # update seq
             if 's' in j:
-                log.debug('Seq: %s -> %s', self.seq or '<none>', j['s'] or '<none>')
+                log.debug(f'seq: {self.seq} -> {j["s"]}')
                 self.seq = j['s']
 
             if not self.custom_ws_logic:
-                if j['op'] == OP.HELLO:
+                op = j['op']
+                if op == OP.HELLO:
                     await self.process_hello(j)
-                elif j['op'] == OP.DISPATCH:
+                elif op == OP.HEARTBEAT_ACK:
+                    await self._heartbeat_ack()
+                elif op == OP.DISPATCH:
                     await self.event_dispatcher(j)
 
     async def process_hello(self, j):
@@ -210,6 +229,7 @@ class Client:
         log.debug('Got OP hello. Heartbeat interval = %d ms.', hb_interval)
         log.debug('Creating heartbeat task.')
         self._heartbeat_task = self.loop.create_task(self._heartbeat(hb_interval))
+        self._ack = True
 
         if not self.custom_ws_logic:
             await self.identify()
@@ -367,9 +387,8 @@ class Client:
         payload: dict
             Payload.
         """
-        log.debug('[e_dispatcher] RECV PAYLOAD')
+
         if payload['op'] != OP.DISPATCH:
-            log.debug("[e_dispatcher] Not DISPATCH, ignoring")
             return
 
         evt_name = payload['t']
