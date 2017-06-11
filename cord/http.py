@@ -38,7 +38,7 @@ class HTTP:
             j = await resp.json()
             self.token = j['token']
 
-    async def get(self, path):
+    async def get(self, path, data=None):
         """Makes a GET request.
 
         Returns
@@ -46,5 +46,5 @@ class HTTP:
         dict:
             JSON data returned from the request.
         """
-        async with self.session.get(self.route(path)) as resp:
+        async with self.session.get(self.route(path), data=json.dumps(data)) as resp:
             return await resp.json()

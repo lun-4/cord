@@ -267,7 +267,7 @@ class Client:
 
     def get_guild(self, guild_id: int):
         """Get a Guild from its ID."""
-        return self.get(self.guild, id=guild_id)
+        return self.get(self.guilds, id=guild_id)
 
     def delete_guild(self, guild_id: int):
         """Delete a guild from internal cache from its ID."""
