@@ -1,12 +1,11 @@
 import logging
 
-import cord.client
-from cord.op import OP
+import cord
 
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger(__name__)
 
-client = cord.client.Client(token=None, email='luna@localhost', password='fuck',
+client = cord.Client(token=None, email='luna@localhost', password='fuck',
                             api_root='http://0.0.0.0:8000/api')
 
 @client.on('READY')
@@ -40,6 +39,6 @@ async def on_ws_connect():
 
     # ratelimit 101
     #for i in range(0, 150):
-        #await client._send_raw({'op': OP.HEARTBEAT, 'd': 'get rekt'})
+        #await client._send_raw({'op': cord.OP.HEARTBEAT, 'd': 'get rekt'})
 
 client.run(gw_version=6)

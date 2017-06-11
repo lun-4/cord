@@ -136,13 +136,10 @@ class Client:
         log.debug('Starting to heartbeat at an interval of %d ms.', interval)
         while True:
             log.debug('Heartbeat! seq = %s', self.seq or '<none>')
-            print(self._ack)
             await self._send_raw({'op': OP.HEARTBEAT, 'd': self.seq})
 
             # Intentional 300ms, gives us time to wait for an ACK.
             await asyncio.sleep(0.3)
-
-            print(self._ack)
 
             if not self._ack:
                 log.warning('We didn\'t get a response from the gateway.')
