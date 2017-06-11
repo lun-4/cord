@@ -88,13 +88,13 @@ class Channel(Identifiable):
     def __repr__(self):
         return f'Channel({self.id}, {self.name})'
 
-class ClientUser(Identifiable):
+class User(Identifiable):
     def __init__(self, client, raw_user):
         super().__init__(client, raw_user)
 
         self._fields = ['username', 'discriminator', 'avatar', 'bot', 'verified', 'email']
 
-        self.fill(raw_user)
+        self.update(raw_user)
 
     def __repr__(self):
         return f'ClientUser({self.username}#{self.discriminator})'

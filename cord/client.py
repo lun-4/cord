@@ -8,7 +8,7 @@ import os
 
 from .http import HTTP
 from .op import OP
-from .objects import Guild, Channel, ClientUser
+from .objects import Guild, Channel, User
 
 log = logging.getLogger('cord.client')
 
@@ -320,7 +320,7 @@ class Client:
         self.raw_user = data['user']
         self.session_id = data['session_id']
 
-        self.user = ClientUser(self, data['user'])
+        self.user = User(self, data['user'])
 
         for raw_guild in data['guilds']:
             for raw_channel in raw_guild['channels']:
