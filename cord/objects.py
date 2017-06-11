@@ -98,3 +98,12 @@ class User(Identifiable):
 
     def __repr__(self):
         return f'ClientUser({self.username}#{self.discriminator})'
+
+class Member(Identifiable):
+    """General member object."""
+    def __init__(self, client, raw_member):
+        super().__init__(client, raw_member)
+
+        self._fields = ['nick', 'joined_at']
+
+        self.fill(raw_member)
