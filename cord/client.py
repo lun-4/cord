@@ -211,8 +211,8 @@ class Client:
                     await self.process_hello(j)
                 elif op == OP.HEARTBEAT_ACK:
                     await self._heartbeat_ack()
-                elif op == OP.DISPATCH:
-                    await self.event_dispatcher(j)
+                #elif op == OP.DISPATCH:
+                #    await self.event_dispatcher(j)
 
     async def process_hello(self, j):
         """Process an `OP 10 Hello` packet and start a heartbeat task.
@@ -395,6 +395,7 @@ class Client:
         except KeyError:
             pass
 
+        log.debug(f'Event Dispatcher: {evt_name}')
         callbacks = self.events.get(evt_name, [])
         for callback in callbacks:
             await callback(payload)
