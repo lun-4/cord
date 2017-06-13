@@ -1,4 +1,7 @@
+import logging
 import json
+
+log = logging.getLogger(__name__)
 
 class HTTP:
     def __init__(self, **kwargs):
@@ -18,6 +21,10 @@ class HTTP:
         # automatic login if needed.
         if self.token is None:
             await self.login()
+
+        if self.token is None:
+            log.error('No token specified.')
+            return
 
         async with self.session.get(self.route('/gateway')) as resp:
             return (await resp.json())['url'] + f'?v={version}&encoding={encoding}'

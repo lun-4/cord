@@ -406,6 +406,10 @@ class Client:
 
         # grab the gateway url, then connect
         gw = await self.http.gateway_url(version=gw_version)
+        if gw is None:
+            log.error('No gateway URL received.')
+            return
+
         log.info('Connecting to gateway: %s', gw)
         self.ws = await websockets.connect(gw)
 
@@ -430,7 +434,8 @@ class Client:
 
         # close ws
         log.debug('Closing procedure: Closing websocket...')
-        await self.ws.close()
+        if self.ws is not None:
+            await self.ws.close()
 
         # close aiohttp clientsession
         log.debug('Closing procedure: Closing ClientSession...')
