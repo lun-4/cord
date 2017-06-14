@@ -1,4 +1,5 @@
 import logging
+import pprint
 
 
 log = logging.getLogger('cord.objects')
@@ -37,7 +38,7 @@ class Identifiable:
     def __repr__(self):
         return f'Identifiable({self.id})'
 
-    def fill(self, raw_object):
+    def fill(self, raw_object, in_update=False):
         """Fill an object with data.
 
         The object needs to have a _fields attribute, it is a list of strings or tuples.
@@ -53,13 +54,20 @@ class Identifiable:
 
                 setattr(self, self_field, field[0](val))
             else:
-                val = raw_object[field]
+                try:
+                    val = raw_object[field]
+                except KeyError as err:
+                    if in_update:
+                        continue
+                    else:
+                        raise err
+
                 setattr(self, field, val)
 
     def update(self, raw_object):
         """Update an object with new data."""
         try:
-            self.fill(raw_object)
+            self.fill(raw_object, True)
         except KeyError:
             pass
 
@@ -128,7 +136,9 @@ class Channel(Identifiable):
         # that don't have topic or last_message_id
         self.update(raw_channel)
 
-        self.guild = client.get(client.guilds, id=self.guild_id)
+        pprint.pprint(raw_channel)
+
+        self.guild = client.get_guild(raw_channel['guild_id'])
 
     def __repr__(self):
         return f'Channel({self.id}, {self.name})'
@@ -143,7 +153,7 @@ class User(Identifiable):
         self.update(raw_user)
 
     def __repr__(self):
-        return f'ClientUser({self.username}#{self.discriminator})'
+        return f'User({self.username}#{self.discriminator})'
 
 
 class Member(Identifiable):
@@ -194,3 +204,6 @@ class Message(Identifiable):
     
     def __repr__(self):
         return f'Message({self.author})'
+
+    async def reply(self, content):
+        await self.client.http.post(f'/channels/{self.channel_id}/messages', {'content': content})

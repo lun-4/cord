@@ -219,7 +219,10 @@ class Client:
                 elif op == OP.HEARTBEAT_ACK:
                     await self._heartbeat_ack()
                 elif op == OP.DISPATCH:
-                    await self.event_dispatcher(j)
+                    try:
+                        await self.event_dispatcher(j)
+                    except:
+                        log.error('Error dispatching event', exc_info=True)
 
     async def process_hello(self, j):
         """Process an `OP 10 Hello` packet and start a heartbeat task.
@@ -413,7 +416,11 @@ class Client:
                 continue
 
             for raw_channel in raw_guild['channels']:
+                raw_channel['guild_id'] = raw_guild['id']
                 self.add_channel(Channel(self, raw_channel))
+
+            for raw_member in raw_guild['members']:
+                self.add_user(User(self, raw_member['user']))
 
             guild = Guild(self, raw_guild)
             self.add_guild(guild)
@@ -431,7 +438,18 @@ class Client:
         existing guilds in cache if needed.
         """
 
-        self.add_guild(Guild(self, payload['d']))
+        raw_guild = payload['d']
+
+        for raw_channel in raw_guild['channels']:
+            raw_channel['guild_id'] = raw_guild['id']
+            self.add_channel(Channel(self, raw_channel))
+
+        for raw_member in raw_guild['members']:
+            self.add_user(User(self, raw_member['user']))
+
+        guild = Guild(self, raw_guild)
+
+        self.add_guild(guild)
 
     async def guild_update(self, payload):
         """GUILD_UPDATE event handler.
