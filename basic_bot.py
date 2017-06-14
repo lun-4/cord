@@ -4,7 +4,9 @@ import cord
 
 logging.basicConfig(level=logging.INFO)
 
-client = cord.Client(token='MzE2NjAyOTAxMjY5MzE1NTk1.DCIHJg.rESj3cnQKSwfxGZn9Bdtp2JeuzY')
+with open('token.txt', 'f') as file:
+    token = file.read().strip()
+client = cord.Client(token=token)
 
 whitelist = (162819866682851329, 97104885337575424)
 
