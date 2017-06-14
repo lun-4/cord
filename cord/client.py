@@ -183,10 +183,7 @@ class Client:
 
         Dispatches ``WS_RECEIVE`` to respective handlers.
         """
-        try:
-            cnt = await self.ws.recv()
-        except websockets.exceptions.ConnectionClosed:
-            return
+        cnt = await self.ws.recv()
 
         j = json.loads(cnt)
 
@@ -204,25 +201,28 @@ class Client:
         with calls to :py:meth:`Client.recv_payload`.
         """
         log.info(f'Starting default receiver. Custom WS: {self.custom_ws_logic}')
-        while True:
-            j = await self.recv_payload()
+        try:
+            while True:
+                j = await self.recv_payload()
 
-            # update seq
-            if 's' in j:
-                log.debug(f'seq: {self.seq} -> {j["s"]}')
-                self.seq = j['s']
+                # update seq
+                if 's' in j:
+                    log.debug(f'seq: {self.seq} -> {j["s"]}')
+                    self.seq = j['s']
 
-            if not self.custom_ws_logic:
-                op = j['op']
-                if op == OP.HELLO:
-                    await self.process_hello(j)
-                elif op == OP.HEARTBEAT_ACK:
-                    await self._heartbeat_ack()
-                elif op == OP.DISPATCH:
-                    try:
-                        await self.event_dispatcher(j)
-                    except:
-                        log.error('Error dispatching event', exc_info=True)
+                if not self.custom_ws_logic:
+                    op = j['op']
+                    if op == OP.HELLO:
+                        await self.process_hello(j)
+                    elif op == OP.HEARTBEAT_ACK:
+                        await self._heartbeat_ack()
+                    elif op == OP.DISPATCH:
+                        try:
+                            await self.event_dispatcher(j)
+                        except:
+                            log.error('Error dispatching event', exc_info=True)
+        except websockets.ConnectionClosed as err:
+            return
 
     async def process_hello(self, j):
         """Process an `OP 10 Hello` packet and start a heartbeat task.
@@ -560,6 +560,11 @@ class Client:
         self.http.session.close()
 
         log.debug('Closing procedure: Complete!')
+
+    def finish(self):
+        """Cancels tasks and closes the loop"""
+        self.loop.run_until_complete(self.loop.create_task(self.close()))
+        self.loop.close()
 
     def run(self, gw_version=7):
         """Runs the client."""

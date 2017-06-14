@@ -15,6 +15,14 @@ async def on_message(message):
     args = message.content.split()
     if message.content.startswith('!wew'):
         await message.reply('u just got meme\'d (from cord)')
+    elif args[0] == '!off':
+        if message.author.id != 162819866682851329:
+            await message.reply('reee')
+            return
+
+
+        client.finish()
+        return
     elif args[0] == '!eval':
         if message.author.id != 162819866682851329:
             await message.reply('u suck')
