@@ -31,11 +31,8 @@ class Client:
         Custom events to event handlers.
     _events: dict
         Gateway events to ``asyncio.Event`` objects.
-    _heartbeat_task: ``asyncio.Task``
+    heartbeat_task: ``asyncio.Task``
         Heartbeat task.
-    custom_ws_logic: bool
-        Flag if this client is running custom websocket logic and
-        it won't use the deafults provided here.
     """
     def __init__(self, **kwargs):
         self.http = HTTP(**kwargs)
@@ -56,11 +53,8 @@ class Client:
         # websocket event objects, asyncio.Event
         self._events = {}
 
-        self._heartbeat_task = None
+        self.heartbeat_task = None
         self._ack = False
-
-        # if this client is running under custom WS logic
-        self.custom_ws_logic = False
 
         # Client's internal cache, Client.process_ready fills them
         self.guilds = []
@@ -131,7 +125,7 @@ class Client:
         """
         await self.ws.send(json.dumps(d))
 
-    async def _heartbeat(self, interval):
+    async def heartbeat(self, interval):
         """Heartbeat with Discord.
 
         Parameters
@@ -153,7 +147,7 @@ class Client:
             self._ack = False
             await asyncio.sleep(interval / 1000)
 
-    async def _heartbeat_ack(self):
+    async def heartbeat_ack(self):
         """Acknowledges a heartbeat."""
         log.debug("Acknowledged heartbeat!")
         self._ack = True
@@ -193,14 +187,8 @@ class Client:
 
         return j
 
-    async def default_receiver(self):
-        """Default websocket logic.
-
-        If a client has no handlers for ``WEBSOCKET_CONNECT``, this function manages
-        `OP 10 Hello` and `OP 0 Dispatch` packets, if not, this is just an infinite loop
-        with calls to :py:meth:`Client.recv_payload`.
-        """
-        log.info(f'Starting default receiver. Custom WS: {self.custom_ws_logic}')
+    async def process_events(self):
+        """Handles payloads from the gateway. """
         try:
             while True:
                 j = await self.recv_payload()
@@ -210,17 +198,16 @@ class Client:
                     log.debug(f'seq: {self.seq} -> {j["s"]}')
                     self.seq = j['s']
 
-                if not self.custom_ws_logic:
-                    op = j['op']
-                    if op == OP.HELLO:
-                        await self.process_hello(j)
-                    elif op == OP.HEARTBEAT_ACK:
-                        await self._heartbeat_ack()
-                    elif op == OP.DISPATCH:
-                        try:
-                            await self.event_dispatcher(j)
-                        except:
-                            log.error('Error dispatching event', exc_info=True)
+                op = j['op']
+                if op == OP.HELLO:
+                    await self.process_hello(j)
+                elif op == OP.HEARTBEAT_ACK:
+                    await self.heartbeat_ack()
+                elif op == OP.DISPATCH:
+                    try:
+                        await self.event_dispatcher(j)
+                    except:
+                        log.exception('Error dispatching event')
         except websockets.ConnectionClosed as err:
             return
 
@@ -235,11 +222,10 @@ class Client:
         hb_interval = j['d']['heartbeat_interval']
         log.debug('Got OP hello. Heartbeat interval = %d ms.', hb_interval)
         log.debug('Creating heartbeat task.')
-        self._heartbeat_task = self.loop.create_task(self._heartbeat(hb_interval))
+        self.heartbeat_task = self.loop.create_task(self.heartbeat(hb_interval))
         self._ack = True
 
-        if not self.custom_ws_logic:
-            await self.identify()
+        await self.identify()
 
     def add_guild(self, guild):
         """Adds a guild to the internal cache, if it already exists, it gets updated.
@@ -372,7 +358,7 @@ class Client:
 
     def update_message(self, raw_message: dict):
         """Update a message in the internal cache."""
-        message - sekf.get(self.messages, id=int(raw_message['id']))
+        message = self.get(self.messages, id=int(raw_message['id']))
         if message is None:
             return
 
@@ -474,9 +460,6 @@ class Client:
     async def wait_event(self, evt_name):
         """Wait for a dispatched event from the gateway.
 
-        If using custom WS logic, start :py:meth:`Client.default_receiver`
-        so it correctly manages events.
-
         Parameters
         ----------
         evt_name: str
@@ -531,35 +514,22 @@ class Client:
         log.info('Connecting to gateway: %s', gw)
         self.ws = await websockets.connect(gw)
 
-        callbacks = self.events.get('WEBSOCKET_CONNECT', [])
-        for callback in callbacks:
-            self.custom_ws_logic = True
-            await callback()
-
-        if self.custom_ws_logic:
-            return
-
-        await self.default_receiver()
+        await self.process_events()
 
     async def close(self):
         """Closes the client."""
         log.info('Closing the client...')
 
-        log.debug('Closing procedure: Closing heartbeater task...')
         # cancel heartbeater
-        if self._heartbeat_task:
-            self._heartbeat_task.cancel()
+        if self.heartbeat_task:
+            self.heartbeat_task.cancel()
 
         # close ws
-        log.debug('Closing procedure: Closing websocket...')
         if self.ws is not None:
             await self.ws.close()
 
         # close aiohttp clientsession
-        log.debug('Closing procedure: Closing ClientSession...')
         self.http.session.close()
-
-        log.debug('Closing procedure: Complete!')
 
     async def disconnect(self):
         """Closes the connection to Discord."""
