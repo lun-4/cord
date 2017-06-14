@@ -13,6 +13,8 @@ async def on_ready(payload):
 @client.on('MESSAGE_CREATE')
 async def on_message(message):
     print(f'{message!r}')
+    if message.content == '!meme':
+        print('meme\'d')
 
 client.run()
 

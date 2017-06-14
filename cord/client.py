@@ -8,7 +8,7 @@ import os
 
 from .http import HTTP
 from .op import OP
-from .objects import Guild, Channel, User, UnavailableGuild
+from .objects import UnavailableGuild, Guild, Channel, User, Member, Message
 
 
 log = logging.getLogger('cord.client')
@@ -66,6 +66,10 @@ class Client:
         self.guilds = []
         self.channels = []
         self.user = None
+        
+        # Those caches are filled on-the-fly through message events and user objects
+        self.messages = []
+        self.users = []
 
     def on(self, event):
         """Register a event handler.
@@ -312,6 +316,83 @@ class Client:
         """Delete a channel from internal cache from its ID."""
         self.delete(self.channels, id=channel_id)
 
+    def add_user(self, user: User):
+        """Add a user to the cache, updates if needed."""
+        old_user = self.get(self.users, id=user.id)
+        if old_user is not None:
+            old_user.update(user._raw)
+
+        self.users.append(user)
+
+    def update_user(self, raw_user: dict):
+        """Update a user in the cache,"""
+
+        user = self.get(self.users, id=int(raw_user['id']))
+        if user is None:
+            return
+        
+        user.update(raw_user)
+    
+    def get_user(self, user):
+        """Get a user object from the cache.
+        
+        If the user is a dict, this calls :meth:`Client.add_user` and returns it.
+
+        Returns
+        -------
+        :class:`User`
+        """
+        if isinstance(user, dict):
+            self.add_user(User(self, user))
+            return self.get(self.users, id=int(user['id']))
+
+        return self.get(self.users, id=int(user))
+
+    def delete_user(self, user_id: int):
+        """Delete a user from the cache."""
+        self.delete(self.users, id=user_id)
+
+    def add_message(self, message: Message):
+        """Add a message to the message cache, updates if needed."""
+        old_message = self.get(self.messages, id=message.id)
+        if old_message is not None:
+            old_message.update(message._raw)
+            return
+
+        self.messages.append(message)
+
+    def update_message(self, raw_message: dict):
+        """Update a message in the internal cache."""
+        message - sekf.get(self.messages, id=int(raw_message['id']))
+        if message is None:
+            return
+
+        message.update(raw_message)
+
+    def get_message(self, message):
+        """Get a message from the cache.
+        
+        If message is a dict, this calls :meth:`Client.adD_message` first.
+
+        Parameters
+        ----------
+        message: dict, int or str
+            Message ID to be searched.
+
+        Returns
+        -------
+        :class:`Message`
+        """
+        if isinstance(message, dict):
+            self.add_message(Message(self, message))
+            return self.get_message(message['id'])
+
+        return self.get(self.messages, id=int(message))
+
+    def delete_message(self, message_id: int):
+        """Delete a message from message cache."""
+        self.delete(self.messages, id=message_id)
+
     async def process_ready(self, payload):
         """Process a `READY` event from the gateway.
 
@@ -406,6 +487,9 @@ class Client:
         log.debug(f'Event Dispatcher: {evt_name}')
         callbacks = self.events.get(evt_name, [])
         args = [payload]
+
+        if evt_name == 'MESSAGE_CREATE':
+            args = [self.get_message(payload['d'])]
 
         for callback in callbacks:
             await callback(*args)

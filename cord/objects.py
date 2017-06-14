@@ -1,9 +1,29 @@
 import logging
 
+
 log = logging.getLogger('cord.objects')
 
-def make_channels(raw_channels, client):
-    return [client.get_channel(int(chan['id'])) for chan in raw_channels]
+
+def listof(method, field='id'):
+    """Make a list of an iterable using a method."""
+    def make_list_of(iterable):
+        if field is None:
+            return [method(el) for el in iterable]
+
+        return [method(el[field]) for el in iterable]
+
+    return make_list_of
+
+def _use_method(method, field):
+    def use_method(obj):
+        return method(obj[field])
+    
+    return use_method
+
+def _timestamp(string):
+    """Return a `datetime.datetime` object from a discord timestamp string"""
+    return string
+
 
 class Identifiable:
     def __init__(self, client, payload):
@@ -25,7 +45,13 @@ class Identifiable:
         for field in self._fields:
             if isinstance(field, tuple):
                 val = raw_object[field[1]]
-                setattr(self, field[1], field[0](val, *field[2:]))
+
+                try:
+                    self_field = field[2]
+                except:
+                    self_field = field[1]
+
+                setattr(self, self_field, field[0](val))
             else:
                 val = raw_object[field]
                 setattr(self, field, val)
@@ -36,6 +62,7 @@ class Identifiable:
             self.fill(raw_object)
         except KeyError:
             pass
+
 
 class UnavailableGuild(Identifiable):
     """Unavailable Guild object.
@@ -52,6 +79,7 @@ class UnavailableGuild(Identifiable):
         super().__init__(client, raw_guild)
         self._fields = [(int, 'id')]
         self.fill(raw_guild)
+
 
 class Guild(Identifiable):
     """Guild object.
@@ -81,12 +109,13 @@ class Guild(Identifiable):
         super().__init__(client, raw_guild)
 
         self._fields = ['name', 'region', (int, 'owner_id'), 'verification_level',
-                'features', 'large', 'unavailable', 'members', (make_channels, 'channels', client)]
+                'features', 'large', 'unavailable', 'members', (listof(client.get_channel), 'channels')]
 
         self.fill(raw_guild)
 
     def __repr__(self):
         return f'Guild({self.id}, {self.name})'
+
 
 class Channel(Identifiable):
     """A text channel."""
@@ -104,6 +133,7 @@ class Channel(Identifiable):
     def __repr__(self):
         return f'Channel({self.id}, {self.name})'
 
+
 class User(Identifiable):
     def __init__(self, client, raw_user):
         super().__init__(client, raw_user)
@@ -115,6 +145,7 @@ class User(Identifiable):
     def __repr__(self):
         return f'ClientUser({self.username}#{self.discriminator})'
 
+
 class Member(Identifiable):
     """General member object."""
     def __init__(self, client, raw_member):
@@ -123,3 +154,43 @@ class Member(Identifiable):
         self._fields = ['nick', 'joined_at']
 
         self.fill(raw_member)
+
+
+class Message(Identifiable):
+    """General message object.
+
+    Attributes
+    ----------
+    id: int
+        Message ID.
+    channel_id: str
+        Channel ID of the message.
+    channel: :class:`Channel`
+        Channel that the message came from.
+    author: :class:`User`
+        Author of the message.
+    content: str
+        Message content.
+    timestamp: meme
+        TODO: timestamp function
+    tts: bool
+        If the message was a TTS message.
+    mention_everyone: bool
+        If the message mentioned everyone.
+    mensions: list[:class:`User`]
+        Users that were mentioned in the message.
+    pinned: bool
+        If the message is pinned.
+    """
+    def __init__(self, client, raw_message):
+        super().__init__(client, raw_message)
+
+        self._fields = ['channel_id', (client.get_channel, 'channel_id', 'channel'), 
+            (client.get_user, 'author'), 'content', (_timestamp, 'timestamp'),
+            'tts', 'mention_everyone', (listof(client.get_user), 'mentions'),
+            'pinned']
+
+        self.fill(raw_message)
+    
+    def __repr__(self):
+        return f'Message({self.author})'
