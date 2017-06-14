@@ -251,6 +251,12 @@ class Client:
         """
         old_guild = self.get(self.guilds, id=guild.id)
 
+        # Check to overwrite unavailable guilds with new shiny guild objects
+        if isinstance(old_guild, UnavailableGuild) and isinstance(guild, Guild):
+            self.delete(self.guilds, id=guild.id)
+            self.guilds.append(guild)
+            return
+
         if old_guild is not None:
             old_guild.update(guild._raw)
             return

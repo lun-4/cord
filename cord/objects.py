@@ -88,6 +88,8 @@ class UnavailableGuild(Identifiable):
         self._fields = [(int, 'id')]
         self.fill(raw_guild)
 
+    def __repr__(self):
+        return f'UnavailableGuild({self.id})'
 
 class Guild(Identifiable):
     """Guild object.
