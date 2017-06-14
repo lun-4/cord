@@ -37,7 +37,7 @@ class Identifiable:
         return self.id == other.id
 
     def __repr__(self):
-        return f'Identifiable({self.id})'
+        return f'Identifiable<id={self.id}>'
 
     def fill(self, raw_object, in_update=False):
         """Fill an object with data.
@@ -90,7 +90,7 @@ class UnavailableGuild(Identifiable):
         self.fill(raw_guild)
 
     def __repr__(self):
-        return f'UnavailableGuild({self.id})'
+        return f'UnavailableGuild<id={self.id}>'
 
 class Guild(Identifiable):
     """Guild object.
@@ -125,7 +125,7 @@ class Guild(Identifiable):
         self.fill(raw_guild)
 
     def __repr__(self):
-        return f'Guild({self.id}, {self.name})'
+        return f'Guild<id={self.id} name={self.name}>'
 
 
 class Channel(Identifiable):
@@ -135,14 +135,17 @@ class Channel(Identifiable):
 
         self._fields = [(int, 'guild_id'), 'name', 'type', 'position', 'is_private', 'topic', (int, 'last_message_id')]
 
-        # We update instad of filling initially becaue of voice channels
+        # We update instead of filling initially becaue of voice channels
         # that don't have topic or last_message_id
         self.update(raw_channel) 
 
         self.guild = client.state.get_guild(raw_channel['guild_id'])
 
+    def __str__(self):
+        return self.name
+
     def __repr__(self):
-        return f'Channel({self.id}, {self.name})'
+        return f'Channel<id={self.id} name={self.name}>'
 
 
 class User(Identifiable):
@@ -153,8 +156,11 @@ class User(Identifiable):
 
         self.update(raw_user)
 
+    def __str__(self):
+        return f'{user.username}#{self.discriminator}'
+
     def __repr__(self):
-        return f'User({self.username}#{self.discriminator})'
+        return f'User<username={self.username} discriminator={self.discriminator}>'
 
 class ClientUser(Identifiable):
     def __init__(self, client, raw_client_user):
@@ -165,7 +171,7 @@ class ClientUser(Identifiable):
         self.fill(raw_client_user)
 
     def __repr__(self):
-        return f'ClientUser({self.username}#{self.discriminator})'
+        return f'ClientUser<username={self.username} discriminator={self.discriminator}>'
 
 class Member(Identifiable):
     """General member object."""
@@ -214,7 +220,7 @@ class Message(Identifiable):
         self.fill(raw_message)
     
     def __repr__(self):
-        return f'Message({self.author})'
+        return f'Message<author={self.author}>'
 
     async def reply(self, content):
         await self.client.http.post(f'/channels/{self.channel_id}/messages', {'content': content})
