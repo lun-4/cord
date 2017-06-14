@@ -8,7 +8,7 @@ import os
 
 from .http import HTTP
 from .op import OP
-from .objects import UnavailableGuild, Guild, Channel, User, Member, Message
+from .objects import UnavailableGuild, Guild, Channel, ClientUser, User, Member, Message
 
 
 log = logging.getLogger('cord.client')
@@ -407,7 +407,7 @@ class Client:
         self.raw_user = data['user']
         self.session_id = data['session_id']
 
-        self.user = User(self, data['user'])
+        self.user = ClientUser(self, data['user'])
 
         for raw_guild in data['guilds']:
             if raw_guild['unavailable']:

@@ -134,9 +134,7 @@ class Channel(Identifiable):
 
         # We update instad of filling initially becaue of voice channels
         # that don't have topic or last_message_id
-        self.update(raw_channel)
-
-        pprint.pprint(raw_channel)
+        self.update(raw_channel) 
 
         self.guild = client.get_guild(raw_channel['guild_id'])
 
@@ -148,13 +146,23 @@ class User(Identifiable):
     def __init__(self, client, raw_user):
         super().__init__(client, raw_user)
 
-        self._fields = ['username', 'discriminator', 'avatar', 'bot', 'verified', 'email']
+        self._fields = ['username', 'discriminator', 'avatar', 'bot']
 
         self.update(raw_user)
 
     def __repr__(self):
         return f'User({self.username}#{self.discriminator})'
 
+class ClientUser(Identifiable):
+    def __init__(self, client, raw_client_user):
+        super().__init__(client, raw_client_user)
+
+        self._fields = ['username', 'discriminator', 'avatar', 'bot']
+
+        self.fill(raw_client_user)
+
+    def __repr__(self):
+        return f'ClientUser({self.username}#{self.discriminator})'
 
 class Member(Identifiable):
     """General member object."""
