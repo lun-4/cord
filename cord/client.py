@@ -8,8 +8,8 @@ import os
 
 from .http import HTTP
 from .op import OP
-from .objects import UnavailableGuild, Guild, Channel, ClientUser, User, Member, Message
-
+from .state import State
+from .objects import UnavailableGuild, Guild, Channel, ClientUser, User
 
 log = logging.getLogger('cord.client')
 
@@ -25,6 +25,8 @@ class Client:
         asyncio event loop.
     ws: `websocket client`
         websocket connection.
+    state: :class:`State`
+        Client state
     seq: int
         Sequence number, changed when Discord says it.
     events: dict
@@ -39,6 +41,10 @@ class Client:
         self.loop = kwargs.get('loop') or asyncio.get_event_loop()
         self.ws = None
         self.seq = None
+
+        self.state = State(self)
+        self.user = None
+        self.session_id = None
 
         # actual events
         self.events = {
@@ -55,15 +61,6 @@ class Client:
 
         self.heartbeat_task = None
         self._ack = False
-
-        # Client's internal cache, Client.process_ready fills them
-        self.guilds = []
-        self.channels = []
-        self.user = None
-        
-        # Those caches are filled on-the-fly through message events and user objects
-        self.messages = []
-        self.users = []
 
     def on(self, event):
         """Register a event handler.
@@ -82,38 +79,6 @@ class Client:
             self.events[event.upper()] = self.events.get(event.upper(), []) + [func]
             return None
         return inner
-
-    def get(self, lst, **kwargs):
-        """Get an object from a list that matches the search criteria in ``**kwargs``.
-
-        Parameters
-        ----------
-        lst: list
-            List to be searched.
-        """
-
-        for element in lst:
-            for attr, val in kwargs.items():
-                res = getattr(element, attr)
-                if res == val:
-                    return element
-
-        return None
-
-    def delete(self, lst, **kwargs):
-        """Delete an element from a list that matches the search criteria in ``**kwargs``
-
-        Parameters
-        ----------
-        lst: list
-            List to be searched.
-        """
-
-        for (idx, element) in enumerate(lst):
-            for attr, val in kwargs.items():
-                res = getattr(element, attr)
-                if res == val:
-                    del lst[idx]
 
     async def _send_raw(self, d):
         """Sends encoded JSON data over the websocket.
@@ -227,167 +192,6 @@ class Client:
 
         await self.identify()
 
-    def add_guild(self, guild):
-        """Adds a guild to the internal cache, if it already exists, it gets updated.
-
-        Parameters
-        ----------
-        guild: :class:`Guild`
-            Guild object to be added
-        """
-        old_guild = self.get(self.guilds, id=guild.id)
-
-        # Check to overwrite unavailable guilds with new shiny guild objects
-        if isinstance(old_guild, UnavailableGuild) and isinstance(guild, Guild):
-            self.delete(self.guilds, id=guild.id)
-            self.guilds.append(guild)
-            return
-
-        if old_guild is not None:
-            old_guild.update(guild._raw)
-            return
-
-        self.guilds.append(guild)
-
-    def update_guild(self, raw_guild):
-        """Updates a guild in internal cache, if it doesn't exist, doesn't do anything.
-
-        Parameters
-        ----------
-        raw_gulid: dict
-            Raw guild object.
-        """
-
-        guild = self.get(self.guilds, id=int(raw_guild['id']))
-        if guild is None:
-            return
-
-        guild.update(raw_guild)
-
-    def get_guild(self, guild_id: int):
-        """Get a Guild from its ID."""
-        return self.get(self.guilds, id=guild_id)
-
-    def delete_guild(self, guild_id: int):
-        """Delete a guild from internal cache from its ID."""
-        self.delete(self.guilds, id=guild_id)
-
-    def add_channel(self, channel):
-        """Adds a channel to the internal cache, if it already exists, it gets updated.
-
-        Parameters
-        ----------
-        channel: :class:`Channel`
-            Channel object to be added.
-        """
-        old_channel = self.get(self.channels, id=channel.id)
-
-        if old_channel is not None:
-            old_channel.update(channel._raw)
-            return
-
-        self.channels.append(channel)
-
-    def update_channel(self, raw_channel):
-        """Updates a channel in internal cache, if it doesn't exist, doesn't do anything.
-
-        Parameters
-        ----------
-        raw_channel: dict
-            Raw guild object.
-        """
-
-        channel = self.get(self.channels, id=int(raw_channel['id']))
-        if channel is None:
-            return
-
-        channel.update(raw_channel)
-
-    def get_channel(self, channel_id: int):
-        """Get a channel by its ID."""
-        return self.get(self.channels, id=channel_id)
-
-    def delete_channel(self, channel_id: int):
-        """Delete a channel from internal cache from its ID."""
-        self.delete(self.channels, id=channel_id)
-
-    def add_user(self, user: User):
-        """Add a user to the cache, updates if needed."""
-        old_user = self.get(self.users, id=user.id)
-        if old_user is not None:
-            old_user.update(user._raw)
-
-        self.users.append(user)
-
-    def update_user(self, raw_user: dict):
-        """Update a user in the cache,"""
-
-        user = self.get(self.users, id=int(raw_user['id']))
-        if user is None:
-            return
-        
-        user.update(raw_user)
-    
-    def get_user(self, user):
-        """Get a user object from the cache.
-        
-        If the user is a dict, this calls :meth:`Client.add_user` and returns it.
-
-        Returns
-        -------
-        :class:`User`
-        """
-        if isinstance(user, dict):
-            self.add_user(User(self, user))
-            return self.get(self.users, id=int(user['id']))
-
-        return self.get(self.users, id=int(user))
-
-    def delete_user(self, user_id: int):
-        """Delete a user from the cache."""
-        self.delete(self.users, id=user_id)
-
-    def add_message(self, message: Message):
-        """Add a message to the message cache, updates if needed."""
-        old_message = self.get(self.messages, id=message.id)
-        if old_message is not None:
-            old_message.update(message._raw)
-            return
-
-        self.messages.append(message)
-
-    def update_message(self, raw_message: dict):
-        """Update a message in the internal cache."""
-        message = self.get(self.messages, id=int(raw_message['id']))
-        if message is None:
-            return
-
-        message.update(raw_message)
-
-    def get_message(self, message):
-        """Get a message from the cache.
-        
-        If message is a dict, this calls :meth:`Client.adD_message` first.
-
-        Parameters
-        ----------
-        message: dict, int or str
-            Message ID to be searched.
-
-        Returns
-        -------
-        :class:`Message`
-        """
-        if isinstance(message, dict):
-            self.add_message(Message(self, message))
-            return self.get_message(message['id'])
-
-        return self.get(self.messages, id=int(message))
-
-    def delete_message(self, message_id: int):
-        """Delete a message from message cache."""
-        self.delete(self.messages, id=message_id)
-
     async def process_ready(self, payload):
         """Process a `READY` event from the gateway.
 
@@ -396,26 +200,24 @@ class Client:
 
         data = payload['d']
 
-        self.raw_user = data['user']
         self.session_id = data['session_id']
-
         self.user = ClientUser(self, data['user'])
 
         for raw_guild in data['guilds']:
             if raw_guild['unavailable']:
                 unavailable_guild = UnavailableGuild(self, raw_guild)
-                self.add_guild(unavailable_guild)
+                self.state.add_guild(unavailable_guild)
                 continue
 
             for raw_channel in raw_guild['channels']:
                 raw_channel['guild_id'] = raw_guild['id']
-                self.add_channel(Channel(self, raw_channel))
+                self.state.add_channel(Channel(self, raw_channel))
 
             for raw_member in raw_guild['members']:
-                self.add_user(User(self, raw_member['user']))
+                self.state.add_user(User(self, raw_member['user']))
 
             guild = Guild(self, raw_guild)
-            self.add_guild(guild)
+            self.state.add_guild(guild)
 
         log.debug(f'Connected to {",".join(data["_trace"])}')
         log.info(f'Logged in! {self.user!r}')
@@ -434,28 +236,28 @@ class Client:
 
         for raw_channel in raw_guild['channels']:
             raw_channel['guild_id'] = raw_guild['id']
-            self.add_channel(Channel(self, raw_channel))
+            self.state.add_channel(Channel(self, raw_channel))
 
         for raw_member in raw_guild['members']:
-            self.add_user(User(self, raw_member['user']))
+            self.state.add_user(User(self, raw_member['user']))
 
         guild = Guild(self, raw_guild)
 
-        self.add_guild(guild)
+        self.state.add_guild(guild)
 
     async def guild_update(self, payload):
         """GUILD_UPDATE event handler.
 
         Updates a guild.
         """
-        self.update_guild(payload['d'])
+        self.state.update_guild(payload['d'])
 
     async def guild_delete(self, payload):
         """GUILD_DELETE event handler.
 
         Deletes a guild from cache.
         """
-        self.delete_guild(int(payload['d']['id']))
+        self.state.delete_guild(int(payload['d']['id']))
 
     async def wait_event(self, evt_name):
         """Wait for a dispatched event from the gateway.
@@ -496,7 +298,7 @@ class Client:
         args = [payload]
 
         if evt_name == 'MESSAGE_CREATE':
-            args = [self.get_message(payload['d'])]
+            args = [self.state.get_message(payload['d'])]
 
         for callback in callbacks:
             await callback(*args)

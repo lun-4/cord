@@ -40,7 +40,7 @@ async def on_presence_update(payload):
         return
 
     if guild_id == '295341979800436736':
-        user = client.get_user(data['user'])
+        user = client.state.get_user(data['user'])
         print(f'Presence for user {user!r}')
         fmt = f'**{user}** -> {data["status"]}, game object: {data["game"]}'
         await client.http.post('/channels/324416852744994818/messages', {'content': fmt})

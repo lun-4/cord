@@ -1,7 +1,6 @@
 import logging
 import pprint
 
-
 log = logging.getLogger('cord.objects')
 
 
@@ -15,11 +14,13 @@ def listof(method, field='id'):
 
     return make_list_of
 
+
 def _use_method(method, field):
     def use_method(obj):
         return method(obj[field])
     
     return use_method
+
 
 def _timestamp(string):
     """Return a `datetime.datetime` object from a discord timestamp string"""
@@ -119,7 +120,7 @@ class Guild(Identifiable):
         super().__init__(client, raw_guild)
 
         self._fields = ['name', 'region', (int, 'owner_id'), 'verification_level',
-                'features', 'large', 'unavailable', 'members', (listof(client.get_channel), 'channels')]
+                'features', 'large', 'unavailable', 'members', (listof(client.state.get_channel), 'channels')]
 
         self.fill(raw_guild)
 
@@ -138,7 +139,7 @@ class Channel(Identifiable):
         # that don't have topic or last_message_id
         self.update(raw_channel) 
 
-        self.guild = client.get_guild(raw_channel['guild_id'])
+        self.guild = client.state.get_guild(raw_channel['guild_id'])
 
     def __repr__(self):
         return f'Channel({self.id}, {self.name})'
@@ -205,9 +206,9 @@ class Message(Identifiable):
     def __init__(self, client, raw_message):
         super().__init__(client, raw_message)
 
-        self._fields = ['channel_id', (client.get_channel, 'channel_id', 'channel'), 
-            (client.get_user, 'author'), 'content', (_timestamp, 'timestamp'),
-            'tts', 'mention_everyone', (listof(client.get_user), 'mentions'),
+        self._fields = ['channel_id', (client.state.get_channel, 'channel_id', 'channel'), 
+            (client.state.get_user, 'author'), 'content', (_timestamp, 'timestamp'),
+            'tts', 'mention_everyone', (listof(client.state.get_user), 'mentions'),
             'pinned']
 
         self.fill(raw_message)
