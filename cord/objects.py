@@ -92,6 +92,7 @@ class UnavailableGuild(Identifiable):
     def __repr__(self):
         return f'UnavailableGuild<id={self.id}>'
 
+
 class Guild(Identifiable):
     """Guild object.
 
@@ -128,16 +129,18 @@ class Guild(Identifiable):
         return f'Guild<id={self.id} name={self.name}>'
 
 
-class Channel(Identifiable):
+class TextChannel(Identifiable):
     """A text channel."""
     def __init__(self, client, raw_channel):
         super().__init__(client, raw_channel)
 
-        self._fields = [(int, 'guild_id'), 'name', 'type', 'position', 'is_private', 'topic', (int, 'last_message_id')]
+        self._fields = [
+            (int, 'guild_id'), 'name', 'type', 'position', 'topic', (int, 'last_message_id')
+        ]
 
         # We update instead of filling initially becaue of voice channels
         # that don't have topic or last_message_id
-        self.update(raw_channel) 
+        self.fill(raw_channel)
 
         self.guild = client.state.get_guild(raw_channel['guild_id'])
 
@@ -145,7 +148,27 @@ class Channel(Identifiable):
         return self.name
 
     def __repr__(self):
-        return f'Channel<id={self.id} name={self.name}>'
+        return f'TextChannel<id={self.id} name={self.name}>'
+
+
+class VoiceChannel(Identifiable):
+    """A text channel."""
+    def __init__(self, client, raw_channel):
+        super().__init__(client, raw_channel)
+
+        self._fields = [
+            (int, 'guild_id'), 'name', 'type', 'position'
+        ]
+
+        self.fill(raw_channel)
+
+        self.guild = client.state.get_guild(raw_channel['guild_id'])
+
+    def __str__(self):
+        return self.name
+
+    def __repr__(self):
+        return f'VoiceChannel<id={self.id} name={self.name}>'
 
 
 class User(Identifiable):
@@ -162,6 +185,7 @@ class User(Identifiable):
     def __repr__(self):
         return f'User<username={self.username} discriminator={self.discriminator}>'
 
+
 class ClientUser(Identifiable):
     def __init__(self, client, raw_client_user):
         super().__init__(client, raw_client_user)
@@ -172,6 +196,7 @@ class ClientUser(Identifiable):
 
     def __repr__(self):
         return f'ClientUser<username={self.username} discriminator={self.discriminator}>'
+
 
 class Member(Identifiable):
     """General member object."""

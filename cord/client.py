@@ -9,7 +9,7 @@ import os
 from .http import HTTP
 from .op import OP
 from .state import State
-from .objects import UnavailableGuild, Guild, Channel, ClientUser, User
+from .objects import UnavailableGuild, Guild, TextChannel, VoiceChannel, ClientUser, User
 
 log = logging.getLogger('cord.client')
 
@@ -211,7 +211,10 @@ class Client:
 
             for raw_channel in raw_guild['channels']:
                 raw_channel['guild_id'] = raw_guild['id']
-                self.state.add_channel(Channel(self, raw_channel))
+                if raw_channel['type'] == 0:
+                    self.state.add_channel(TextChannel(self, raw_channel))
+                else:
+                    self.state.add_channel(VoiceChannel(self, raw_channel))
 
             for raw_member in raw_guild['members']:
                 self.state.add_user(User(self, raw_member['user']))
@@ -236,7 +239,10 @@ class Client:
 
         for raw_channel in raw_guild['channels']:
             raw_channel['guild_id'] = raw_guild['id']
-            self.state.add_channel(Channel(self, raw_channel))
+            if raw_channel['type'] == 0:
+                self.state.add_channel(TextChannel(self, raw_channel))
+            else:
+                self.state.add_channel(VoiceChannel(self, raw_channel))
 
         for raw_member in raw_guild['members']:
             self.state.add_user(User(self, raw_member['user']))

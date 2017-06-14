@@ -2,7 +2,7 @@ import logging
 
 import cord
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 client = cord.Client(token='MzE2NjAyOTAxMjY5MzE1NTk1.DCIHJg.rESj3cnQKSwfxGZn9Bdtp2JeuzY')
 
@@ -31,19 +31,19 @@ async def on_message(message):
         except Exception as err:
             await message.reply(f'{err!r}')
 
-@client.on('PRESENCE_UPDATE')
-async def on_presence_update(payload):
-    data = payload['d']
-    guild_id = data.get('guild_id')
-    print(f'Received guild ID {guild_id!r}')
-    if guild_id is None:
-        return
+# @client.on('PRESENCE_UPDATE')
+# async def on_presence_update(payload):
+#     data = payload['d']
+#     guild_id = data.get('guild_id')
+#     print(f'Received guild ID {guild_id!r}')
+#     if guild_id is None:
+#         return
 
-    if guild_id == '295341979800436736':
-        user = client.state.get_user(data['user'])
-        print(f'Presence for user {user!r}')
-        fmt = f'**{user}** -> {data["status"]}, game object: {data["game"]}'
-        await client.http.post('/channels/324416852744994818/messages', {'content': fmt})
+#     if guild_id == '295341979800436736':
+#         user = client.state.get_user(data['user'])
+#         print(f'Presence for user {user!r}')
+#         fmt = f'**{user}** -> {data["status"]}, game object: {data["game"]}'
+#         await client.http.post('/channels/324416852744994818/messages', {'content': fmt})
 
 client.run()
 
