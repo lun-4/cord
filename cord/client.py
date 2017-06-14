@@ -8,7 +8,8 @@ import os
 
 from .http import HTTP
 from .op import OP
-from .objects import Guild, Channel, User
+from .objects import Guild, Channel, User, UnavailableGuild
+
 
 log = logging.getLogger('cord.client')
 
@@ -44,7 +45,7 @@ class Client:
 
         # actual events
         self.events = {
-            'WS_RECEIVE': [self.event_dispatcher],
+            'WS_RECEIVE': [],
             'READY': [self.process_ready],
 
             'GUILD_CREATE': [self.guild_create],
@@ -79,6 +80,7 @@ class Client:
                 raise RuntimeError(
                     'Event callback %s (waits for %s) is not a coroutine' % (func.__qualname__,
                                                                              event))
+            log.debug(f'Add event handler for {event.upper()}')
             self.events[event.upper()] = self.events.get(event.upper(), []) + [func]
             return None
         return inner
@@ -197,6 +199,7 @@ class Client:
         `OP 10 Hello` and `OP 0 Dispatch` packets, if not, this is just an infinite loop
         with calls to :py:meth:`Client.recv_payload`.
         """
+        log.info(f'Starting default receiver. Custom WS: {self.custom_ws_logic}')
         while True:
             j = await self.recv_payload()
 
@@ -211,8 +214,8 @@ class Client:
                     await self.process_hello(j)
                 elif op == OP.HEARTBEAT_ACK:
                     await self._heartbeat_ack()
-                #elif op == OP.DISPATCH:
-                #    await self.event_dispatcher(j)
+                elif op == OP.DISPATCH:
+                    await self.event_dispatcher(j)
 
     async def process_hello(self, j):
         """Process an `OP 10 Hello` packet and start a heartbeat task.
@@ -323,6 +326,11 @@ class Client:
         self.user = User(self, data['user'])
 
         for raw_guild in data['guilds']:
+            if raw_guild['unavailable']:
+                unavailable_guild = UnavailableGuild(self, raw_guild)
+                self.add_guild(unavailable_guild)
+                continue
+
             for raw_channel in raw_guild['channels']:
                 self.add_channel(Channel(self, raw_channel))
 
@@ -332,8 +340,8 @@ class Client:
         log.debug(f'Connected to {",".join(data["_trace"])}')
         log.info(f'Logged in! {self.user!r}')
 
-        log.debug(self.channels)
-        log.debug(self.guilds)
+        #log.debug(self.channels)
+        #log.debug(self.guilds)
 
     async def guild_create(self, payload):
         """GUILD_CREATE event handler.
@@ -342,21 +350,21 @@ class Client:
         existing guilds in cache if needed.
         """
 
-        self.add_guild(Guild(payload))
+        self.add_guild(Guild(self, payload['d']))
 
     async def guild_update(self, payload):
         """GUILD_UPDATE event handler.
 
         Updates a guild.
         """
-        self.update_guild(payload)
+        self.update_guild(payload['d'])
 
     async def guild_delete(self, payload):
         """GUILD_DELETE event handler.
 
         Deletes a guild from cache.
         """
-        self.delete_guild(int(payload['id']))
+        self.delete_guild(int(payload['d']['id']))
 
     async def wait_event(self, evt_name):
         """Wait for a dispatched event from the gateway.
@@ -397,8 +405,10 @@ class Client:
 
         log.debug(f'Event Dispatcher: {evt_name}')
         callbacks = self.events.get(evt_name, [])
+        args = [payload]
+
         for callback in callbacks:
-            await callback(payload)
+            await callback(*args)
 
     async def _run(self, gw_version=7):
         # create http clientsession

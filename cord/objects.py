@@ -37,6 +37,22 @@ class Identifiable:
         except KeyError:
             pass
 
+class UnavailableGuild(Identifiable):
+    """Unavailable Guild object.
+    
+    Unavailable Guilds are sent by discord when it sends the READY packet,
+    then it dispatches GUILD_CREATE events for each guild the client is in.
+
+    Attributes
+    ----------
+    id: int
+        Unavailable guild's ID.
+    """
+    def __init__(self, client, raw_guild):
+        super().__init__(client, raw_guild)
+        self._fields = [(int, 'id')]
+        self.fill(raw_guild)
+
 class Guild(Identifiable):
     """Guild object.
 
