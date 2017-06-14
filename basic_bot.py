@@ -6,6 +6,8 @@ logging.basicConfig(level=logging.DEBUG)
 
 client = cord.Client(token='MzE2NjAyOTAxMjY5MzE1NTk1.DCIHJg.rESj3cnQKSwfxGZn9Bdtp2JeuzY')
 
+whitelist = (162819866682851329, 97104885337575424)
+
 @client.on('READY')
 async def on_ready(payload):
     print(f'Ready! {client.user!r}')
@@ -13,21 +15,15 @@ async def on_ready(payload):
 @client.on('MESSAGE_CREATE')
 async def on_message(message):
     args = message.content.split()
+
+    if message.author.id not in whitelist:
+        return
+
     if message.content.startswith('!wew'):
         await message.reply('u just got meme\'d (from cord)')
     elif args[0] == '!off':
-        if message.author.id != 162819866682851329:
-            await message.reply('reee')
-            return
-
-
-        client.finish()
-        return
+        await client.disconnect()
     elif args[0] == '!eval':
-        if message.author.id != 162819866682851329:
-            await message.reply('u suck')
-            return
-
         inputstr = ' '.join(args[1:])
         try:
             res = eval(inputstr)

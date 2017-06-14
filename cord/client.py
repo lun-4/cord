@@ -561,21 +561,16 @@ class Client:
 
         log.debug('Closing procedure: Complete!')
 
-    def finish(self):
-        """Cancels tasks and closes the loop"""
-        self.loop.run_until_complete(self.loop.create_task(self.close()))
-        self.loop.close()
+    async def disconnect(self):
+        """Closes the connection to Discord."""
+        await self.close()
 
     def run(self, gw_version=7):
         """Runs the client."""
-        self.loop.create_task(self._run(gw_version))
         try:
-            self.loop.run_forever()
+            self.loop.run_until_complete(self._run(gw_version))
         finally:
             log.info('Closing.')
-
-            # close everything
-            self.loop.run_until_complete(self.loop.create_task(self.close()))
 
             log.info('Closing loop...')
             self.loop.close()
