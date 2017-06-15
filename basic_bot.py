@@ -2,9 +2,9 @@ import logging
 
 import cord
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 
-with open('token.txt', 'f') as file:
+with open('token.txt', 'r') as file:
     token = file.read().strip()
 client = cord.Client(token=token)
 

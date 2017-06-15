@@ -31,6 +31,7 @@ class Identifiable:
     def __init__(self, client, payload):
         self.id = int(payload['id'])
         self._raw = payload
+        self._fields = []
         self.client = client
 
     def __eq__(self, other):
@@ -38,6 +39,14 @@ class Identifiable:
 
     def __repr__(self):
         return f'Identifiable<id={self.id}>'
+
+    def has_fields(self, *fields):
+        return all([hasattr(self, field) for field in fields])
+
+    @property
+    def full(self):
+        """If the object has all attributes described in :attr:`Identifiable._fields`"""
+        return self.has_fields(self._fields)
 
     def fill(self, raw_object, in_update=False):
         """Fill an object with data.

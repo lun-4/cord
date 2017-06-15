@@ -1,5 +1,9 @@
+import logging
+
 from .utils import delete, get
 from .objects import UnavailableGuild, Guild, User, Message
+
+log = logging.getLogger(__name__)
 
 class State:
     def __init__(self, client):
@@ -104,7 +108,11 @@ class State:
         if old_user is not None:
             old_user.update(user._raw)
 
-        self.users.append(user)
+        if user.has_fields('id', 'username', 'discriminator'):
+            log.debug(f'Adding complete user {user!r}')
+            self.users.append(user)
+        else:
+            log.debug(f'Not adding incomplete user {user.id}.')
 
     def update_user(self, raw_user: dict):
         """Update a user in the cache,"""
