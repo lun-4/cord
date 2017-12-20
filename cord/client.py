@@ -1,17 +1,19 @@
-import aiohttp
 import asyncio
-import websockets
-
 import json
 import logging
 import os
 
+import aiohttp
+import websockets
+
 from .http import HTTP
 from .op import OP
 from .state import State
-from .objects import UnavailableGuild, Guild, TextChannel, VoiceChannel, ClientUser, User
+from .objects import UnavailableGuild, Guild, TextChannel,\
+        VoiceChannel, ClientUser, User
 
 log = logging.getLogger('cord.client')
+logging.getLogger('websockets').setLevel(logging.INFO)
 
 
 class Client:
@@ -62,6 +64,9 @@ class Client:
         self.heartbeat_task = None
         self._ack = False
 
+        self.ready = False
+        self._ready_task = None
+
     def on(self, event):
         """Register a event handler.
 
@@ -75,6 +80,7 @@ class Client:
                 raise RuntimeError(
                     'Event callback %s (waits for %s) is not a coroutine' % (func.__qualname__,
                                                                              event))
+
             log.debug(f'Add event handler for {event.upper()}')
             self.events[event.upper()] = self.events.get(event.upper(), []) + [func]
             return None
@@ -108,6 +114,7 @@ class Client:
 
             if not self._ack:
                 log.warning('We didn\'t get a response from the gateway.')
+                # should we resume
 
             self._ack = False
             await asyncio.sleep(interval / 1000)
@@ -128,8 +135,6 @@ class Client:
                     '$os': os.name,
                     '$browser': 'cord',
                     '$device': 'cord',
-                    '$referrer': '',
-                    '$referring_domain': ''
                 },
                 'compress': False,
                 'large_threshold': 250,
@@ -137,7 +142,7 @@ class Client:
             }
         })
 
-    async def recv_payload(self):
+    async def recv(self):
         """Receive a payload from the gateway.
 
         Dispatches ``WS_RECEIVE`` to respective handlers.
@@ -156,7 +161,7 @@ class Client:
         """Handles payloads from the gateway. """
         try:
             while True:
-                j = await self.recv_payload()
+                j = await self.recv()
 
                 # update seq
                 if 's' in j:
@@ -171,9 +176,10 @@ class Client:
                 elif op == OP.DISPATCH:
                     try:
                         await self.event_dispatcher(j)
-                    except:
+                    except Exception:
                         log.exception('Error dispatching event')
         except websockets.ConnectionClosed as err:
+            log.exception('Connection failed')
             return
 
     async def process_hello(self, j):
@@ -184,19 +190,42 @@ class Client:
         j: dict
             The `OP 10 Hello` packet.
         """
-        hb_interval = j['d']['heartbeat_interval']
-        log.debug('Got OP hello. Heartbeat interval = %d ms.', hb_interval)
-        log.debug('Creating heartbeat task.')
-        self.heartbeat_task = self.loop.create_task(self.heartbeat(hb_interval))
+        data = j['d']
+        hb_interval = data['heartbeat_interval']
+        log.debug(f'Got OP hello. Heartbeat interval = {hb_interval} ms.')
+        self.heartbeat_task = self.loop.create_task(
+                self.heartbeat(hb_interval))
         self._ack = True
 
         await self.identify()
+
+    async def proper_ready_wait(self):
+        """Waits for 100ms without any
+        GUILD_CREATE events to dispatch
+        the `proper_ready` event."""
+        if self.ready:
+            log.debug('Already PROPER_READY')
+            return
+
+        log.info('waiting')
+        await asyncio.sleep(1)
+        log.info('waited, dispatching')
+
+        await self.event_dispatcher({
+            'op': OP.DISPATCH,
+            't': 'PROPER_READY',
+        })
+        self.ready = True
 
     async def process_ready(self, payload):
         """Process a `READY` event from the gateway.
 
         Fills in internal cache.
         """
+
+        if not self._ready_task:
+            self._ready_task = self.loop.create_task(
+                self.proper_ready_wait())
 
         data = payload['d']
 
@@ -222,11 +251,11 @@ class Client:
             guild = Guild(self, raw_guild)
             self.state.add_guild(guild)
 
-        log.debug(f'Connected to {",".join(data["_trace"])}')
+        log.debug(f'Connected to {data["_trace"]}')
         log.info(f'Logged in! {self.user!r}')
 
-        #log.debug(self.channels)
-        #log.debug(self.guilds)
+        # log.debug(self.channels)
+        # log.debug(self.guilds)
 
     async def guild_create(self, payload):
         """GUILD_CREATE event handler.
@@ -234,6 +263,9 @@ class Client:
         Fills in the internal guild cache, overwrites
         existing guilds in cache if needed.
         """
+
+        if self._ready_task:
+            self._ready_task.cancel()
 
         raw_guild = payload['d']
 
@@ -248,8 +280,10 @@ class Client:
             self.state.add_user(User(self, raw_member['user']))
 
         guild = Guild(self, raw_guild)
-
         self.state.add_guild(guild)
+
+        self._ready_task = self.loop.create_task(
+            self.proper_ready_wait())
 
     async def guild_update(self, payload):
         """GUILD_UPDATE event handler.

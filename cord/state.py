@@ -6,6 +6,22 @@ from .objects import UnavailableGuild, Guild, User, Message
 log = logging.getLogger(__name__)
 
 class State:
+    """Main connection state class.
+    
+    Attributes
+    ----------
+    guilds: List[Guild]
+        List of guilds being stored in the state.
+    channels: List[Channel]
+        List of channels being stored in the state.
+    user: ClientUser
+        The user representing the current client.
+
+    messages: List[Message]
+        List of messages being stored in the state.
+    users: List[User]
+        List of users being stored in the state.
+    """
     def __init__(self, client):
         self.client = client
 
@@ -13,12 +29,13 @@ class State:
         self.guilds = []
         self.channels = []
         self.user = None
-        
-        # Those caches are filled on-the-fly through message events and user objects
+
+        # Those caches are filled on-the-fly
+        # through message events and user objects
         self.messages = []
         self.users = []
 
-    def add_guild(self, guild):
+    def add_guild(self, guild: Guild):
         """Adds a guild to the internal cache, if it already exists, it gets updated.
 
         Parameters
@@ -29,7 +46,8 @@ class State:
         old_guild = get(self.guilds, id=guild.id)
 
         # Check to overwrite unavailable guilds with new shiny guild objects
-        if isinstance(old_guild, UnavailableGuild) and isinstance(guild, Guild):
+        if isinstance(old_guild, UnavailableGuild) \
+                and isinstance(guild, Guild):
             delete(self.guilds, id=guild.id)
             self.guilds.append(guild)
             return
@@ -40,7 +58,7 @@ class State:
 
         self.guilds.append(guild)
 
-    def update_guild(self, raw_guild):
+    def update_guild(self, raw_guild: dict):
         """Updates a guild in internal cache, if it doesn't exist, doesn't do anything.
 
         Parameters
@@ -55,7 +73,7 @@ class State:
 
         guild.update(raw_guild)
 
-    def get_guild(self, guild_id: int):
+    def get_guild(self, guild_id: int) -> Guild:
         """Get a Guild from its ID."""
         return delete(self.guilds, id=guild_id)
 
@@ -79,8 +97,9 @@ class State:
 
         self.channels.append(channel)
 
-    def update_channel(self, raw_channel):
-        """Updates a channel in internal cache, if it doesn't exist, doesn't do anything.
+    def update_channel(self, raw_channel: dict):
+        """Updates a channel in internal cache,
+        if it doesn't exist, doesn't do anything.
 
         Parameters
         ----------
@@ -109,7 +128,6 @@ class State:
             old_user.update(user._raw)
 
         if user.has_fields('id', 'username', 'discriminator'):
-            log.debug(f'Adding complete user {user!r}')
             self.users.append(user)
         else:
             log.debug(f'Not adding incomplete user {user.id}.')
@@ -120,13 +138,14 @@ class State:
         user = get(self.users, id=int(raw_user['id']))
         if user is None:
             return
-        
+
         user.update(raw_user)
-    
+
     def get_user(self, user):
         """Get a user object from the cache.
-        
-        If the user is a dict, this calls :meth:`Client.add_user` and returns it.
+
+        If the user is a dict, this calls
+        :meth:`Client.add_user` and returns it.
 
         Returns
         -------
@@ -161,7 +180,7 @@ class State:
 
     def get_message(self, message):
         """Get a message from the cache.
-        
+
         If message is a dict, this calls :meth:`Client.adD_message` first.
 
         Parameters

@@ -41,17 +41,20 @@ class Identifiable:
         return f'Identifiable<id={self.id}>'
 
     def has_fields(self, *fields):
+        """If an object has all the fields defined"""
         return all([hasattr(self, field) for field in fields])
 
     @property
     def full(self):
-        """If the object has all attributes described in :attr:`Identifiable._fields`"""
+        """If the object has all attributes
+        described in :attr:`Identifiable._fields`"""
         return self.has_fields(self._fields)
 
     def fill(self, raw_object, in_update=False):
         """Fill an object with data.
 
-        The object needs to have a _fields attribute, it is a list of strings or tuples.
+        The object needs to have a _fields attribute,
+        it is a list of strings or tuples.
         """
         for field in self._fields:
             if isinstance(field, tuple):
@@ -59,10 +62,13 @@ class Identifiable:
 
                 try:
                     self_field = field[2]
-                except:
+                except Exception:
                     self_field = field[1]
 
-                setattr(self, self_field, field[0](val))
+                if val is None:
+                    setattr(self, self_field, None)
+                else:
+                    setattr(self, self_field, field[0](val))
             else:
                 try:
                     val = raw_object[field]
@@ -84,9 +90,11 @@ class Identifiable:
 
 class UnavailableGuild(Identifiable):
     """Unavailable Guild object.
-    
-    Unavailable Guilds are sent by discord when it sends the READY packet,
-    then it dispatches GUILD_CREATE events for each guild the client is in.
+
+    Unavailable Guilds are sent by discord
+    when it sends the READY packet, then it
+    dispatches GUILD_CREATE events for each
+    guild the client is in.
 
     Attributes
     ----------
@@ -120,7 +128,7 @@ class Guild(Identifiable):
     large: bool
         True if the guild is large.
     unavailable: bool
-        If the guils is unavailable to the client.
+        If the guilds is unavailable to the client.
     members: List[Member]
         Guild members.
     channels: List[Channel]
@@ -129,8 +137,10 @@ class Guild(Identifiable):
     def __init__(self, client, raw_guild):
         super().__init__(client, raw_guild)
 
-        self._fields = ['name', 'region', (int, 'owner_id'), 'verification_level',
-                'features', 'large', 'unavailable', 'members', (listof(client.state.get_channel), 'channels')]
+        self._fields = ['name', 'region', (int, 'owner_id'),
+                        'verification_level', 'features', 'large',
+                        'unavailable', 'members',
+                        (listof(client.state.get_channel), 'channels')]
 
         self.fill(raw_guild)
 
@@ -144,7 +154,8 @@ class TextChannel(Identifiable):
         super().__init__(client, raw_channel)
 
         self._fields = [
-            (int, 'guild_id'), 'name', 'type', 'position', 'topic', (int, 'last_message_id')
+            (int, 'guild_id'), 'name', 'type', 'position',
+            'topic', (int, 'last_message_id')
         ]
 
         # We update instead of filling initially becaue of voice channels
@@ -189,7 +200,7 @@ class User(Identifiable):
         self.update(raw_user)
 
     def __str__(self):
-        return f'{user.username}#{self.discriminator}'
+        return f'{self.username}#{self.discriminator}'
 
     def __repr__(self):
         return f'User<username={self.username} discriminator={self.discriminator}>'

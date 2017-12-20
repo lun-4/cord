@@ -15,8 +15,10 @@ def get(lst, **kwargs):
 
     return None
 
+
 def delete(lst, **kwargs):
-    """Delete an element from a list that matches the search criteria in ``**kwargs``
+    """Delete an element from a list that
+    matches the search criteria in ``**kwargs``
 
     Parameters
     ----------
