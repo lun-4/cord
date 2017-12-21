@@ -2,12 +2,13 @@ import asyncio
 import json
 import logging
 import os
+from random import randint
 
 import aiohttp
 import websockets
 
 from .http import HTTP
-from .op import OP
+from .op import OP, Disconnect
 from .state import State
 from .objects import UnavailableGuild, Guild, TextChannel,\
         VoiceChannel, ClientUser, User
@@ -52,6 +53,7 @@ class Client:
         self.events = {
             'WS_RECEIVE': [],
             'READY': [self.process_ready],
+            'RESUMED': [self.process_resumed],
 
             'GUILD_CREATE': [self.guild_create],
             'GUILD_UPDATE': [self.guild_update],
@@ -105,42 +107,27 @@ class Client:
             Heartbeat interval in miliseconds.
         """
         log.debug('Starting to heartbeat at an interval of %d ms.', interval)
-        while True:
-            log.debug('Heartbeat! seq = %s', self.seq or '<none>')
-            await self._send_raw({'op': OP.HEARTBEAT, 'd': self.seq})
+        try:
+            while True:
+                log.debug('Heartbeat! seq = %s', self.seq or '<none>')
+                await self._send_raw({'op': OP.HEARTBEAT, 'd': self.seq})
 
-            # Intentional 300ms, gives us time to wait for an ACK.
-            await asyncio.sleep(0.3)
+                # Intentional 300ms, gives us time to wait for an ACK.
+                await asyncio.sleep(0.3)
 
-            if not self._ack:
-                log.warning('We didn\'t get a response from the gateway.')
-                # should we resume
+                if not self._ack:
+                    log.warning('We didn\'t get a response from the gateway.')
+                    # should we resume
 
-            self._ack = False
-            await asyncio.sleep(interval / 1000)
+                self._ack = False
+                await asyncio.sleep(interval / 1000)
+        except asyncio.CancelledError:
+            log.info('Heartbeat cancelled')
 
     async def heartbeat_ack(self):
         """Acknowledges a heartbeat."""
         log.debug("Acknowledged heartbeat!")
         self._ack = True
-
-    async def identify(self):
-        """Send an ``IDENTIFY`` packet."""
-        log.info('Identifying with the gateway...')
-        await self._send_raw({
-            'op': OP.IDENTIFY,
-            'd': {
-                'token': self.http.token,
-                'properties': {
-                    '$os': os.name,
-                    '$browser': 'cord',
-                    '$device': 'cord',
-                },
-                'compress': False,
-                'large_threshold': 250,
-                'shard': [0, 1]
-            }
-        })
 
     async def recv(self):
         """Receive a payload from the gateway.
@@ -162,25 +149,116 @@ class Client:
         try:
             while True:
                 j = await self.recv()
-
-                # update seq
-                if 's' in j:
-                    log.debug(f'seq: {self.seq} -> {j["s"]}')
-                    self.seq = j['s']
-
-                op = j['op']
-                if op == OP.HELLO:
-                    await self.process_hello(j)
-                elif op == OP.HEARTBEAT_ACK:
-                    await self.heartbeat_ack()
-                elif op == OP.DISPATCH:
-                    try:
-                        await self.event_dispatcher(j)
-                    except Exception:
-                        log.exception('Error dispatching event')
+                await self.process_packet(j)
         except websockets.ConnectionClosed as err:
             log.exception('Connection failed')
+            await self.reconnect(err)
+
+    async def connect(self, gw_version=7):
+        """Start a connection to the gateway."""
+        gw = await self.http.gateway_url(version=gw_version)
+        if not gw:
+            log.error('No gateway URL received')
             return
+
+        log.info(f'Connecting to {gw!r}')
+        self.ws = await websockets.connect(gw)
+
+    async def identify(self):
+        """Send an ``IDENTIFY`` packet."""
+        log.info('Identifying with the gateway...')
+
+        await self._send_raw({
+            'op': OP.IDENTIFY,
+            'd': {
+                'token': self.http.token,
+                'properties': {
+                    '$os': os.name,
+                    '$browser': 'cord',
+                    '$device': 'cord',
+                },
+                'compress': False,
+                'large_threshold': 250,
+                'shard': [0, 1]
+            }
+        })
+
+        log.info('IDENTIFY Sent')
+
+    async def resume(self):
+        """Send a RESUME packet."""
+        log.info('Resuming with the gateway')
+        log.debug(f'{self.seq}')
+
+        await self._send_raw({
+            'op': OP.RESUME,
+            'd': {
+                'token': self.http.token,
+                'session_id': self.session_id,
+                'seq': self.seq
+            }
+        })
+
+        log.info('RESUME sent')
+
+    async def reconnect(self, err: websockets.ConnectionClosed):
+        """Start a reconnection."""
+
+        log.info(f'Currently trying to reconnect from {err!r}')
+
+        if err.code in (Disconnect.INVALID_SHARD,
+                        Disconnect.SHARDING_REQUIRED):
+            log.error('Unrecoverable state (sharding).')
+            return
+
+        if err.code in (Disconnect.AUTH_FAIL,):
+            log.error('Invalid token')
+            return
+
+        if err.code in (Disconnect.AUTH_DUPE,):
+            log.error('Duped authentication')
+
+        await self.connect()
+
+        # Depending on the error, we resume or not
+        if err.code in (Disconnect.INVALID_SEQ,
+                        Disconnect.SESSION_TIMEOUT,
+                        Disconnect.RATE_LIMITED):
+            log.info('Re-identifying...')
+            await self.identify()
+        else:
+            log.info('Resuming...')
+            await self.resume()
+
+        await self.process_events()
+
+    async def process_packet(self, j: dict):
+        op = j['op']
+        data = j.get('d')
+        if op == OP.HELLO:
+            await self.process_hello(j)
+        elif op == OP.HEARTBEAT_ACK:
+            await self.heartbeat_ack()
+        elif op == OP.INVALID_SESSION:
+            if not data:
+                await asyncio.sleep(randint(1, 5))
+                await self.identify()
+            else:
+                await self.resume()
+        elif op == OP.RECONNECT:
+            await self.ws.close()
+            await self.reconnect(websockets.ConnectionClosed(
+                code=Disconnect.UNKNOWN, reason='forced reconnect'))
+        elif op == OP.DISPATCH:
+            # update seq (only update on dispatch)
+            if 's' in j:
+                log.debug(f'seq: {self.seq} -> {j["s"]}')
+                self.seq = j['s']
+
+            try:
+                await self.event_dispatcher(j)
+            except Exception:
+                log.exception('Error dispatching event')
 
     async def process_hello(self, j):
         """Process an `OP 10 Hello` packet and start a heartbeat task.
@@ -193,11 +271,15 @@ class Client:
         data = j['d']
         hb_interval = data['heartbeat_interval']
         log.debug(f'Got OP hello. Heartbeat interval = {hb_interval} ms.')
+        if self.heartbeat_task:
+            self.heartbeat_task.cancel()
+
         self.heartbeat_task = self.loop.create_task(
                 self.heartbeat(hb_interval))
         self._ack = True
 
-        await self.identify()
+        if not self.ready:
+            await self.identify()
 
     async def proper_ready_wait(self):
         """Waits for 100ms without any
@@ -256,6 +338,10 @@ class Client:
 
         # log.debug(self.channels)
         # log.debug(self.guilds)
+
+    async def process_resumed(self, payload):
+        """Process RESUMED event."""
+        log.info(f'Resumed with {payload["d"]["_trace"]!r}')
 
     async def guild_create(self, payload):
         """GUILD_CREATE event handler.
@@ -333,7 +419,7 @@ class Client:
         except KeyError:
             pass
 
-        log.debug(f'Event Dispatcher: {evt_name}')
+        # log.debug(f'Event Dispatcher: {evt_name}')
         callbacks = self.events.get(evt_name, [])
         args = [payload]
 
@@ -346,16 +432,7 @@ class Client:
     async def _run(self, gw_version=7):
         # create http clientsession
         self.http.session = aiohttp.ClientSession()
-
-        # grab the gateway url, then connect
-        gw = await self.http.gateway_url(version=gw_version)
-        if gw is None:
-            log.error('No gateway URL received.')
-            return
-
-        log.info('Connecting to gateway: %s', gw)
-        self.ws = await websockets.connect(gw)
-
+        await self.connect()
         await self.process_events()
 
     async def close(self):

@@ -19,6 +19,14 @@ async def on_ready(payload):
     print(f'Ready! {client.user!r}')
 
 
+@client.on('TYPING_START')
+async def on_typing(payload):
+    data = payload['d']
+    chan = client.state.get_channel(int(data['channel_id']))
+    user = client.state.get_user(int(data['user_id']))
+    print('typing', chan, user)
+
+
 @client.on('MESSAGE_CREATE')
 async def on_message(message):
     if message.author.id == client.user.id:

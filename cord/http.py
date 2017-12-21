@@ -79,7 +79,7 @@ class HTTP:
 
         async with self.session.request(method, self.route(path),
                                         headers=headers, data=data) as resp:
-            log.debug(f'Requested {method}:{path}, {resp!r}')
+            log.debug(f'Requested {method}:{path}')
             try:
                 output_data = await resp.json()
             except Exception:
