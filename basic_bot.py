@@ -53,7 +53,10 @@ async def on_message(message):
         await message.reply('hewwo')
     elif args[0] == 'off':
         await message.reply('baaai')
-        await client.disconnect()
+        client.disconnect()
+    elif args[0] == 'reconn':
+        await message.reply('disconnecting ws, wait reconn at any moment')
+        await client.ws.close()
     elif args[0] == 'eval':
         if message.author.id not in EVAL_WHITELIST:
             return await message.reply('no \N{ANGER SYMBOL}')

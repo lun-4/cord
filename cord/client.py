@@ -2,6 +2,8 @@ import asyncio
 import json
 import logging
 import os
+import sys
+
 from random import randint
 
 import aiohttp
@@ -10,7 +12,7 @@ import websockets
 from .http import HTTP
 from .op import OP, Disconnect
 from .state import State
-from .objects import UnavailableGuild, Guild, TextChannel,\
+from .objects import UnavailableGuild, Guild, TextChannel, \
         VoiceChannel, ClientUser, User
 
 log = logging.getLogger('cord.client')
@@ -49,6 +51,14 @@ class Client:
         self.user = None
         self.session_id = None
 
+        self.op_handlers = {
+            OP.HELLO: self.process_hello,
+            OP.HEARTBEAT_ACK: self.heartbeat_ack,
+            OP.INVALID_SESSION: self.invalid_session,
+            OP.RECONNECT: self.reconn_handler,
+            OP.DISPATCH: self.dispatch_handler,
+        }
+
         # actual events
         self.events = {
             'WS_RECEIVE': [],
@@ -69,6 +79,9 @@ class Client:
         self.ready = False
         self._ready_task = None
 
+        #: So that the hello handler sends an identify
+        self._hello_identify = True
+
     def on(self, event):
         """Register a event handler.
 
@@ -79,16 +92,17 @@ class Client:
         """
         def inner(func):
             if not asyncio.iscoroutinefunction(func):
-                raise RuntimeError(
-                    'Event callback %s (waits for %s) is not a coroutine' % (func.__qualname__,
-                                                                             event))
+                raise TypeError(f'callback {func.__qualname__} '
+                                f'(waits for {event}) is not coroutine')
 
             log.debug(f'Add event handler for {event.upper()}')
-            self.events[event.upper()] = self.events.get(event.upper(), []) + [func]
-            return None
+
+            existing_events = self.events.get(event.upper(), [])
+            self.events[event.upper()] = existing_events + [func]
+
         return inner
 
-    async def _send_raw(self, d):
+    async def _send_raw(self, obj):
         """Sends encoded JSON data over the websocket.
 
         Parameters
@@ -96,7 +110,7 @@ class Client:
         d: any
             Any object.
         """
-        await self.ws.send(json.dumps(d))
+        await self.ws.send(json.dumps(obj))
 
     async def heartbeat(self, interval):
         """Heartbeat with Discord.
@@ -124,10 +138,15 @@ class Client:
         except asyncio.CancelledError:
             log.info('Heartbeat cancelled')
 
-    async def heartbeat_ack(self):
-        """Acknowledges a heartbeat."""
-        log.debug("Acknowledged heartbeat!")
+    async def heartbeat_ack(self, _packet):
+        """Heartbeat ACK handler."""
         self._ack = True
+
+    async def dispatch(self, evt_name: str, *args, **kwargs):
+        """Dispatch a single event to the client's event handlers."""
+        handlers = self.events.get(evt_name.upper(), [])
+        for handler in handlers:
+            await handler(*args, **kwargs)
 
     async def recv(self):
         """Receive a payload from the gateway.
@@ -137,10 +156,7 @@ class Client:
         cnt = await self.ws.recv()
 
         j = json.loads(cnt)
-
-        handlers = self.events.get('WS_RECEIVE', [])
-        for func in handlers:
-            await func(j)
+        await self.dispatch('WS_RECEIVE', j)
 
         return j
 
@@ -156,17 +172,18 @@ class Client:
 
     async def connect(self, gw_version=7):
         """Start a connection to the gateway."""
-        gw = await self.http.gateway_url(version=gw_version)
-        if not gw:
+        gw_url = await self.http.gateway_url(version=gw_version)
+        if not gw_url:
             log.error('No gateway URL received')
             return
 
-        log.info(f'Connecting to {gw!r}')
-        self.ws = await websockets.connect(gw)
+        log.info(f'Connecting to {gw_url!r}')
+        self.ws = await websockets.connect(gw_url)
 
-    async def identify(self):
+    async def identify(self, reason=''):
         """Send an ``IDENTIFY`` packet."""
-        log.info('Identifying with the gateway...')
+        log.info('Identifying with the gateway '
+                 f'(reason: {reason or "<none>"})')
 
         await self._send_raw({
             'op': OP.IDENTIFY,
@@ -185,10 +202,12 @@ class Client:
 
         log.info('IDENTIFY Sent')
 
-    async def resume(self):
+    async def resume(self, reason=''):
         """Send a RESUME packet."""
-        log.info('Resuming with the gateway')
-        log.debug(f'{self.seq}')
+        log.info('Resuming with the gateway '
+                 f'(reason: {reason or "<none>"})')
+
+        log.debug(f'resuming with seq={self.seq} sid={self.session_id}')
 
         await self._send_raw({
             'op': OP.RESUME,
@@ -198,8 +217,6 @@ class Client:
                 'seq': self.seq
             }
         })
-
-        log.info('RESUME sent')
 
     async def reconnect(self, err: websockets.ConnectionClosed):
         """Start a reconnection."""
@@ -220,46 +237,60 @@ class Client:
             log.error('Duped authentication')
 
         await self.connect()
+        self._hello_identify = False
 
         # Depending on the error, we resume or not
         if err.code in (Disconnect.INVALID_SEQ,
                         Disconnect.SESSION_TIMEOUT,
                         Disconnect.RATE_LIMITED):
             log.info('Re-identifying...')
-            await self.identify()
+            await self.identify('Reconnecting')
         else:
             log.info('Resuming...')
-            await self.resume()
+            await self.resume('Reconnecting')
 
         await self.process_events()
 
-    async def process_packet(self, j: dict):
-        op = j['op']
-        data = j.get('d')
-        if op == OP.HELLO:
-            await self.process_hello(j)
-        elif op == OP.HEARTBEAT_ACK:
-            await self.heartbeat_ack()
-        elif op == OP.INVALID_SESSION:
-            if not data:
-                await asyncio.sleep(randint(1, 5))
-                await self.identify()
-            else:
-                await self.resume()
-        elif op == OP.RECONNECT:
-            await self.ws.close()
-            await self.reconnect(websockets.ConnectionClosed(
-                code=Disconnect.UNKNOWN, reason='forced reconnect'))
-        elif op == OP.DISPATCH:
-            # update seq (only update on dispatch)
-            if 's' in j:
-                log.debug(f'seq: {self.seq} -> {j["s"]}')
-                self.seq = j['s']
+    async def process_packet(self, packet: dict):
+        """Process a single packet and call
+        respective op code handlers."""
+        opcode = packet['op']
 
-            try:
-                await self.event_dispatcher(j)
-            except Exception:
-                log.exception('Error dispatching event')
+        ophandler = self.op_handlers.get(opcode)
+        if not ophandler:
+            log.warning(f'Unhandled op {opcode}')
+
+        await ophandler(packet)
+
+    async def invalid_session(self, packet):
+        """Handle OP Invalid Session packets."""
+        # packet['d'] contains if we
+        # resume or identify
+        resumable = packet['d']
+
+        if resumable:
+            await self.resume('Session is resumbale')
+        else:
+            await self.identify('Not resumable')
+
+    async def reconn_handler(self, _packet):
+        """Handle OP Reconnect packets."""
+        await self.ws.close()
+        await self.reconnect(websockets.ConnectionClosed(
+            code=Disconnect.UNKNOWN, reason='forced reconnect'))
+
+    async def dispatch_handler(self, packet):
+        """Handle OP Dispatch packets."""
+        # update seq (only update on dispatch)
+        if 's' in packet:
+            seq = packet['s']
+            log.debug(f'seq: {self.seq} -> {seq}')
+            self.seq = seq
+
+        try:
+            await self.event_dispatcher(packet)
+        except Exception:
+            log.exception('Error dispatching event')
 
     async def process_hello(self, j):
         """Process an `OP 10 Hello` packet and start a heartbeat task.
@@ -276,28 +307,27 @@ class Client:
             self.heartbeat_task.cancel()
 
         self.heartbeat_task = self.loop.create_task(
-                self.heartbeat(hb_interval))
+            self.heartbeat(hb_interval))
         self._ack = True
 
-        if not self.ready:
-            await self.identify()
+        if self._hello_identify:
+            await self.identify('Hello')
+            self._hello_identify = False
 
     async def proper_ready_wait(self):
-        """Waits for 100ms without any
+        """Waits for 2 seconds without any
         GUILD_CREATE events to dispatch
         the `proper_ready` event."""
+
         if self.ready:
-            log.debug('Already PROPER_READY')
             return
 
-        log.info('waiting')
-        await asyncio.sleep(1)
-        log.info('waited, dispatching')
-
+        await asyncio.sleep(2)
         await self.event_dispatcher({
             'op': OP.DISPATCH,
             't': 'PROPER_READY',
         })
+
         self.ready = True
 
     async def process_ready(self, payload):
@@ -334,8 +364,8 @@ class Client:
             guild = Guild(self, raw_guild)
             self.state.add_guild(guild)
 
-        log.debug(f'Connected to {data["_trace"]}')
-        log.info(f'Logged in! {self.user!r}')
+        log.info(f'Connected to {data["_trace"]} '
+                 f'session_id: {self.session_id!r}')
 
         # log.debug(self.channels)
         # log.debug(self.guilds)
@@ -421,19 +451,16 @@ class Client:
             pass
 
         # log.debug(f'Event Dispatcher: {evt_name}')
-        callbacks = self.events.get(evt_name, [])
-        args = [payload]
-
         if evt_name == 'MESSAGE_CREATE':
-            args = [self.state.get_message(payload['d'])]
-
-        for callback in callbacks:
-            await callback(*args)
+            message = self.state.get_message(payload['d'])
+            await self.dispatch(evt_name, message)
+        else:
+            await self.dispatch(evt_name, payload)
 
     async def _run(self, gw_version=7):
         # create http clientsession
         self.http.session = aiohttp.ClientSession()
-        await self.connect()
+        await self.connect(gw_version)
         await self.process_events()
 
     async def close(self):
@@ -444,23 +471,19 @@ class Client:
         if self.heartbeat_task:
             self.heartbeat_task.cancel()
 
-        # close ws
-        if self.ws is not None:
-            await self.ws.close()
+        await self.ws.close()
+        await self.http.session.close()
 
-        # close aiohttp clientsession
-        self.http.session.close()
-
-    async def disconnect(self):
-        """Closes the connection to Discord."""
-        await self.close()
+    def disconnect(self):
+        """Closes the connection."""
+        # maybe cleanup jobs here?
+        self.loop.run_until_complete(self.close())
+        self.loop.close()
+        sys.exit(1)
 
     def run(self, gw_version=7):
         """Runs the client."""
         try:
             self.loop.run_until_complete(self._run(gw_version))
         finally:
-            log.info('Closing.')
-
-            log.info('Closing loop...')
-            self.loop.close()
+            self.disconnect()
