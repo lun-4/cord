@@ -101,6 +101,10 @@ class HTTP:
         """Make a PUT request to the API."""
         return await self.request('PUT', path, data)
 
+    async def patch(self, path, data=None):
+        """Make a PATCH request to the API."""
+        return await self.request('PATCH', path, data)
+
     async def delete(self, path, data=None):
         """Make a DELETE request to the API."""
         return await self.request('DELETE', path, data)

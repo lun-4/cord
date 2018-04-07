@@ -205,6 +205,7 @@ class Client:
         """Start a reconnection."""
 
         log.info(f'Currently trying to reconnect from {err!r}')
+        await asyncio.sleep(3)
 
         if err.code in (Disconnect.INVALID_SHARD,
                         Disconnect.SHARDING_REQUIRED):

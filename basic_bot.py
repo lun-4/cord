@@ -1,4 +1,5 @@
 import logging
+import time
 
 import cord
 
@@ -10,7 +11,8 @@ with open('token.txt', 'r') as file:
 PREFIX = 'nya '
 EVAL_WHITELIST = (162819866682851329, 69198249432449024)
 
-client = cord.Client(token=token)
+client = cord.Client(token=token,)
+                     #api_root='http://0.0.0.0:8000/api')
 log = logging.getLogger(__name__)
 
 
@@ -39,8 +41,16 @@ async def on_message(message):
     cnt = cnt[len(PREFIX):]
     args = cnt.split()
 
-    if args[0] == 'meme':
-        await message.reply('u just got meme\'d (from cord)')
+    if args[0] == 'ping':
+        t1 = time.monotonic()
+        msg = await message.reply('.')
+        t2 = time.monotonic()
+
+        delta = round((t2 - t1) * 1000, 2)
+
+        await msg.edit(f'took {delta}ms')
+    elif args[0] == 'h':
+        await message.reply('hewwo')
     elif args[0] == 'off':
         await message.reply('baaai')
         await client.disconnect()

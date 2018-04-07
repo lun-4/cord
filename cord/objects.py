@@ -268,4 +268,19 @@ class Message(Identifiable):
         return f'Message<author={self.author}>'
 
     async def reply(self, content):
-        await self.client.http.post(f'/channels/{self.channel_id}/messages', {'content': content})
+        content = str(content)
+
+        raw_msg = await self.client.http.post(
+            f'/channels/{self.channel_id}/messages',
+            {'content': content}
+        )
+
+        return Message(self.client, raw_msg)
+
+    async def edit(self, content: str):
+        raw_msg = await self.client.http.patch(
+            f'/channels/{self.channel_id}/messages/{self.id}',
+            {'content': content}
+        )
+
+        self = Message(self.client, raw_msg)
